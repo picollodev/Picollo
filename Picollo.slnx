@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Sln/">
+    <File Path=".github/workflows/ci.yml" />
+    <File Path="Readme.md" />
+    <File Path="src/Directory.Build.props" />
+    <Project Path="src/Picollo.Cli/Picollo.Cli.csproj" />
+    <Project Path="src/Picollo.PerfEvent/Picollo.PerfEvent.csproj" />
+    <Project Path="src/Picollo/Picollo.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="src/Picollo.Cli.Tests/Picollo.Cli.Tests.csproj" />
+    <Project Path="src/Picollo.PerfEvent.Tests/Picollo.PerfEvent.Tests.csproj" />
+    <Project Path="src/Picollo.Tests/Picollo.Tests.csproj" />
+  </Folder>
+</Solution>

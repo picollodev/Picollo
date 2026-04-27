@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.0.1-alpha</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Authors>Victor Baybekov</Authors>
+    <Copyright>Copyright (c) 2026 Victor Baybekov (@buybackoff)</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/picollodev/picollo</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/picollodev/picollo</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <Description>Performance Instrumentation and Continuous Observation for Latency and Low-level Optimizations. Tools for serious performance work in .NET</Description>
+    <PackageTags>picollo;dotnet</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <DebugType>embedded</DebugType>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+</Project>
