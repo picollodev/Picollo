@@ -7,9 +7,9 @@
         <PackageId>Picollo.Cli</PackageId>
         <IsPackable>true</IsPackable>
         <PackAsTool>true</PackAsTool>
-        <!-- <PublishSelfContained>true</PublishSelfContained>
-        <RuntimeIdentifiers>linux-x64;linux-arm64;any</RuntimeIdentifiers> -->
         <PublishSelfContained>true</PublishSelfContained>
+<!--        <RuntimeIdentifiers>linux-x64;linux-arm64;any</RuntimeIdentifiers>-->
+<!--        <PublishSelfContained>true</PublishSelfContained>-->
         <ToolCommandName>picollo</ToolCommandName>
         <PackageReadmeFile>README.md</PackageReadmeFile>
     </PropertyGroup>

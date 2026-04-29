@@ -34,4 +34,13 @@
     <Error Condition="!Exists('picollo_native.so')" Text="Native library picollo_native.so not found. Please compile it first on Linux x64 or provide it manually."/>
   </Target>
 
+  <Target Name="PublishNativeLinuxAsset" BeforeTargets="ComputeFilesToPublish" Condition="'$(RuntimeIdentifier)' == 'linux-x64' and Exists('$(MSBuildProjectDirectory)/picollo_native.so')">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(MSBuildProjectDirectory)/picollo_native.so">
+        <RelativePath>picollo_native.so</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>
