@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Sln/">
     <File Path=".github/workflows/ci.yml" />
+    <File Path=".gitignore" />
     <File Path="LICENSE.txt" />
     <File Path="Readme.md" />
     <File Path="src/Directory.Build.props" />
