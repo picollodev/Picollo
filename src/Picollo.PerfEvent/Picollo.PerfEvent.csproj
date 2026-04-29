@@ -1,35 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-    <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
-        <LangVersion>latest</LangVersion>
-        <Nullable>enable</Nullable>
-        <PackageId>Picollo.PerfEvent</PackageId>
-        <IsPackable>true</IsPackable>
-        <PackageReadmeFile>README.md</PackageReadmeFile>
-    </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <PackageId>Picollo.PerfEvent</PackageId>
+    <IsPackable>true</IsPackable>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RootNamespace>Picollo</RootNamespace>
+  </PropertyGroup>
 
-    <ItemGroup>
-      <ProjectReference Include="..\Picollo\Picollo.csproj" />
-    </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Picollo\Picollo.csproj"/>
+  </ItemGroup>
 
-    <ItemGroup>
-        <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
-        <None Include="picollo_native.c" />
-        <None Update="picollo_native.so">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-            <Pack>true</Pack>
-            <PackagePath>runtimes/linux-x64/native</PackagePath>
-        </None>
-    </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false"/>
+    <None Include="picollo_native.c"/>
+    <None Update="picollo_native.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/linux-x64/native</PackagePath>
+    </None>
+  </ItemGroup>
 
-    <Target Name="CompileNativeLinux" BeforeTargets="BeforeBuild" Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux))) AND $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'X64'">
-        <Exec Command="gcc -shared -o picollo_native.so -fPIC -O3 picollo_native.c" />
-        <Message Importance="High" Text="Successfully compiled picollo_native.so with -O3" />
-    </Target>
+  <Target Name="CompileNativeLinux" BeforeTargets="BeforeBuild" Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux))) AND $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'X64'">
+    <Exec Command="gcc -shared -o picollo_native.so -fPIC -O3 picollo_native.c"/>
+    <Message Importance="High" Text="Successfully compiled picollo_native.so with -O3"/>
+  </Target>
 
-    <Target Name="CheckNativeExistsBeforePublish" BeforeTargets="BeforePublish">
-        <Error Condition="!Exists('picollo_native.so')" Text="Native library picollo_native.so not found. Please compile it first on Linux x64 or provide it manually." />
-    </Target>
+  <Target Name="CheckNativeExistsBeforePublish" BeforeTargets="BeforePublish">
+    <Error Condition="!Exists('picollo_native.so')" Text="Native library picollo_native.so not found. Please compile it first on Linux x64 or provide it manually."/>
+  </Target>
 
 </Project>

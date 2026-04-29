@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Sln/">
     <File Path=".github/workflows/ci.yml" />
+    <File Path="LICENSE.txt" />
     <File Path="Readme.md" />
     <File Path="src/Directory.Build.props" />
     <Project Path="src/Picollo.Cli/Picollo.Cli.csproj" />
@@ -10,6 +11,7 @@
   <Folder Name="/Tests/">
     <Project Path="src/Picollo.Cli.Tests/Picollo.Cli.Tests.csproj" />
     <Project Path="src/Picollo.PerfEvent.Tests/Picollo.PerfEvent.Tests.csproj" />
+    <Project Path="src/Picollo.Runner/Picollo.Runner.csproj" />
     <Project Path="src/Picollo.Tests/Picollo.Tests.csproj" />
   </Folder>
 </Solution>
