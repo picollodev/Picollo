@@ -25,14 +25,15 @@ public class PerfEventCounterSession : IDisposable
 
     private PerfEventCounterSession(int osThreadId, int cpu)
     {
-        if (!OperatingSystem.IsLinux())
-            throw new PlatformNotSupportedException("perf_event_open counters are supported only on Linux.");
         Pid = osThreadId;
         Cpu = cpu;
     }
 
     public static PerfEventCounterSession New(int osThreadId = -1, int cpu = -1)
     {
+        if (!OperatingSystem.IsLinux())
+            throw new PlatformNotSupportedException("perf_event_open counters are supported only on Linux.");
+        
         if (osThreadId < 0) osThreadId = -1;
         if (cpu < 0) cpu = -1;
 
@@ -131,16 +132,20 @@ public class PerfEventCounterSession : IDisposable
         try
         {
             _groupLeaderFd = -1;
+            var pinned = _pinned;
             for (int i = 0; i < _counters.Count; i++)
             {
                 var counter = _counters[i];
-                var attr = CreateAttr(counter.Type, counter.Config, _pinned, disabled: true, excludeKernel: !_withKernel);
+                var attr = CreateAttr(counter.Type, counter.Config, pinned, disabled: false, excludeKernel: !_withKernel);
                 int fd = PerfEventOpen(in attr, Pid, Cpu, _groupLeaderFd, 0);
 
                 counter.Fd = fd;
 
                 if (_groupLeaderFd < 0)
+                {
+                    pinned = false;
                     _groupLeaderFd = fd;
+                }
 
                 counter.Id = GetEventId(fd);
 

@@ -17,7 +17,7 @@ using var perfSession = PerfEventCounterSession
 	.AddHardwareCounter(PerfHwId.Instructions)
 	.AddHardwareCounter(PerfHwId.RefCpuCycles);
 perfSession.Open();
-
+ 
 // perfSession.GetSnapshot();
 
 // perfSession.Start();
@@ -41,7 +41,7 @@ var sharedSamples = new List<nuint>(Cycles);
 
 CollectAndReport48("inst", static () => PerfHelpers.ReadInstructionsRetired());
 
-for(int r = 0; r < 100; r++){
+for(int r = 0; r < 1; r++){
 	CollectAndReport48("core", static () => PerfHelpers.ReadCoreCycles());
 }
 
@@ -107,7 +107,7 @@ void CollectAndReport48(string name, Func<nuint> read)
 	for (var cycle = 1; cycle <= Cycles; cycle++)
 	{
 		var before = read();
-		CpuUtils.AddChain256(10000);
+		CpuUtils.AddChain512(10000);
 		var after = read();
 		var delta = Delta48(after, before);
 		sharedSamples.Add(delta);
@@ -124,7 +124,7 @@ void CollectAndReport64(string name, Func<nuint> read)
 	for (var cycle = 1; cycle <= Cycles; cycle++)
 	{
 		var before = read();
-		CpuUtils.AddChain256(Workload.Count);
+		CpuUtils.AddChain512(Workload.Count);
 		var after = read();
 		var delta = unchecked(after - before);
 		sharedSamples.Add(delta);
@@ -449,7 +449,7 @@ internal static class Workload
 
 internal static class PerfHelpers
 {
-	private const string NativeLibrary = "perf_helpers";
+	private const string NativeLibrary = "picollo_native";
 
 	[DllImport(NativeLibrary, EntryPoint = "is_available", CallingConvention = CallingConvention.Cdecl)]
 	[SuppressGCTransition]
