@@ -127,7 +127,8 @@ internal enum PerfEventReadFormat : ulong
     PERF_FORMAT_TOTAL_TIME_RUNNING = 1U << 1,
     PERF_FORMAT_ID = 1U << 2,
     PERF_FORMAT_GROUP = 1U << 3,
-    PERF_FORMAT_MAX = 1U << 4,
+    PERF_FORMAT_LOST = 1U << 4,
+    PERF_FORMAT_MAX = 1U << 5,		/* non-ABI */
 }
 
 // perf_event_attr_flags

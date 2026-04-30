@@ -235,9 +235,9 @@ public sealed class PerfEventSession : IDisposable
                 if (counter.MmapPage == MapFailed)
                     ThrowLastPInvokeError($"mmap(perf fd={fd}) failed");
 
-                ReadPerfMmapCaps(counter.MmapPage, out bool hasUserTime, out bool hasUserRdpmc);
-                counter.HasUserTime = hasUserTime;
-                counter.HasUserRdpmc = hasUserRdpmc;
+                // ReadPerfMmapCaps(counter.MmapPage, out bool hasUserTime, out bool hasUserRdpmc);
+                // counter.HasUserTime = hasUserTime;
+                // counter.HasUserRdpmc = hasUserRdpmc;
                 counter.IsAvailable = true;
                 anyOpened = true;
                 _counterStates[i] = counter;
@@ -328,7 +328,7 @@ public sealed class PerfEventSession : IDisposable
                 continue;
             }
 
-            nuint value = ReadPerfProgrammableCounter(state.MmapPage, out nuint enabled, out nuint running);
+            nuint value = 0; // ReadPerfProgrammableCounter(state.MmapPage, out nuint enabled, out nuint running);
             if (value == nuint.MaxValue)
                 return false;
 
@@ -337,8 +337,8 @@ public sealed class PerfEventSession : IDisposable
 
             if (i == leaderIndex)
             {
-                leaderEnabled = (ulong)enabled;
-                leaderRunning = (ulong)running;
+                leaderEnabled = 0; // (ulong)enabled;
+                leaderRunning = 0; // (ulong)running;
                 gotLeaderTime = true;
             }
         }

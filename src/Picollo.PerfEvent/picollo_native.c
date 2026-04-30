@@ -65,9 +65,7 @@ uintptr_t read_reference_cycles(void)
     return read_pmc(0x40000002u);
 }
 
-void read_fixed_counters(uintptr_t* instructions_retired,
-                    uintptr_t* core_cycles,
-                    uintptr_t* reference_cycles)
+void read_fixed_counters(uintptr_t* instructions_retired, uintptr_t* core_cycles, uintptr_t* reference_cycles)
 {
     *instructions_retired = read_instructions_retired();
     *core_cycles = read_core_cycles();
@@ -175,9 +173,7 @@ void has_cap_user(int32_t* has_user_time, int32_t* has_user_rdpmc)
 }
 
 // https://github.com/icl-utk-edu/papi/blob/7294c1a6b9793fead3a60805a9ab188a9af66445/src/components/perf_event/perf_helpers.h#L244
-uintptr_t read_perf_programmable_counter(const struct perf_event_mmap_page* pc,
-                                         uintptr_t* enabled_out,
-                                         uintptr_t* running_out)
+static inline int read_perf_programmable_counter(const struct perf_event_mmap_page* pc, uint64_t* counter_value)
 {
     uint32_t seq, index, width;
     int64_t count;
@@ -234,45 +230,34 @@ uintptr_t read_perf_programmable_counter(const struct perf_event_mmap_page* pc,
             /* add current count into the existing kernel count */
             count += pmc;
         } else {
-            /* Falling back because rdpmc not supported */
-            /* for this event. */
-            if (enabled_out != NULL)
-            {
-                *enabled_out = (uintptr_t)enabled;
-            }
-            if (running_out != NULL)
-            {
-                *running_out = (uintptr_t)running;
-            }
-            return 0xffffffffffffffffULL;
+            return -1;
         }
 
         __asm__ volatile("" ::: "memory");
 
     } while (pc->lock != seq);
 
-    if (enabled_out != NULL)
-    {
-        *enabled_out = (uintptr_t)enabled;
-    }
-    if (running_out != NULL)
-    {
-        *running_out = (uintptr_t)running;
-    }
+    counter_value[0] = (uint64_t)count;
+    counter_value[1] = enabled;
+    counter_value[2] = running;
 
-    return (uintptr_t)count;
+    return 0;
 }
 
-void read_perf_mmap_caps(const struct perf_event_mmap_page* pc,
-                        int32_t* has_user_time,
-                        int32_t* has_user_rdpmc)
+int read_perf_programmable_counters(const struct perf_event_mmap_page* const* pcs,
+                                    uint64_t* counter_values,
+                                    uintptr_t length)
 {
-    if (has_user_time != NULL)
+    uintptr_t i;
+
+    for (i = 0; i < length; i++)
     {
-        *has_user_time = pc->cap_user_time ? 1 : 0;
+        int rc = read_perf_programmable_counter(pcs[i], counter_values + (i * 3u));
+        if (rc != 0)
+        {
+            return rc;
+        }
     }
-    if (has_user_rdpmc != NULL)
-    {
-        *has_user_rdpmc = pc->cap_user_rdpmc ? 1 : 0;
-    }
+
+    return 0;
 }

@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <Target Name="CompileNativeLinux" BeforeTargets="BeforeBuild" Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux))) AND $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'X64'">
-    <Exec Command="gcc -shared -o picollo_native.so -fPIC -O3 picollo_native.c"/>
+    <Exec Command="./build_gcc.sh"/>
     <Message Importance="High" Text="Successfully compiled picollo_native.so with -O3"/>
   </Target>
 

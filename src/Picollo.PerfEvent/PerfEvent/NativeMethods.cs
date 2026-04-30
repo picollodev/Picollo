@@ -12,7 +12,7 @@ internal static class NativeMethods
     private const string NativeLibrary = "picollo_native";
 
     [DllImport(NativeLibrary, EntryPoint = "is_available")]
-    private static extern int IsNativeAvailable();
+    private static extern nuint IsNativeAvailable();
 
     public static bool IsSupported()
     {
@@ -36,16 +36,9 @@ internal static class NativeMethods
         }
     }
 
-    [DllImport(NativeLibrary, EntryPoint = "read_perf_programmable_counter", CallingConvention = CallingConvention.Cdecl)]
+    [DllImport(NativeLibrary, EntryPoint = "read_perf_programmable_counters", CallingConvention = CallingConvention.Cdecl)]
     [SuppressGCTransition]
-    public static extern nuint ReadPerfProgrammableCounter(nint perfEventMmapPage, out nuint enabled, out nuint running);
-
-    [DllImport(NativeLibrary, EntryPoint = "read_perf_mmap_caps", CallingConvention = CallingConvention.Cdecl)]
-    [SuppressGCTransition]
-    public static extern void ReadPerfMmapCaps(nint perfEventMmapPage,
-        [MarshalAs(UnmanagedType.Bool)] out bool hasUserTime,
-        [MarshalAs(UnmanagedType.Bool)] out bool hasUserRdpmc);
-
+    public static extern int ReadPerfProgrammableCounters(nint perfEventMmapPages, nint counterValues, nuint length);
 
     public static int PerfEventOpen(in PerfEventAttr attr, int pid, int cpu, int groupFd, nuint flags)
     {
@@ -74,8 +67,10 @@ internal static class NativeMethods
             Size = (uint)Unsafe.SizeOf<PerfEventAttr>(),
             Config = config,
             SampleType = PerfEventSampleFormat.NONE,
-            ReadFormat = PerfEventReadFormat.PERF_FORMAT_GROUP | PerfEventReadFormat.PERF_FORMAT_ID | PerfEventReadFormat.PERF_FORMAT_TOTAL_TIME_ENABLED |
-                         PerfEventReadFormat.PERF_FORMAT_TOTAL_TIME_RUNNING,
+            ReadFormat = PerfEventReadFormat.PERF_FORMAT_GROUP
+                         | PerfEventReadFormat.PERF_FORMAT_ID
+                         | PerfEventReadFormat.PERF_FORMAT_TOTAL_TIME_ENABLED
+                         | PerfEventReadFormat.PERF_FORMAT_TOTAL_TIME_RUNNING,
             Flags = (disabled ? PerfEventAttrFlags.Disabled : 0UL)
                     | (excludeKernel ? (PerfEventAttrFlags.ExcludeKernel | PerfEventAttrFlags.ExcludeHv) : 0UL)
                     | (pinned ? PerfEventAttrFlags.Pinned : 0),

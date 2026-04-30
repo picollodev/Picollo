@@ -501,11 +501,4 @@ internal static class PerfHelpers
 	internal static extern void HasCapUser(
 		[MarshalAs(UnmanagedType.Bool)] out bool hasUserTime,
 		[MarshalAs(UnmanagedType.Bool)] out bool hasUserRdpmc);
-
-	[DllImport(NativeLibrary, EntryPoint = "read_perf_programmable_counter", CallingConvention = CallingConvention.Cdecl)]
-	[SuppressGCTransition]
-	internal static extern nuint ReadPerfProgrammableCounter(
-		IntPtr perfEventMmapPage,
-		out nuint enabled,
-		out nuint running);
 }
