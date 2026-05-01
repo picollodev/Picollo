@@ -18,31 +18,37 @@ public unsafe class PerfEventCounterSession : IDisposable
 {
     public int Pid { get; }
     public int Cpu { get; }
+
+    public bool HasUserRdpmc { get; private set; }
+    public bool HasUserTime { get; private set; }
+    
     private bool _pinned;
     private bool _enabled;
     private bool _withKernel;
 
+    private const int OverheadCalibrationIterations = 32;
+
     private int _state; // -1 disposed, 0 not opened, 1 opened
 
     private int _groupLeaderFd = -1;
-    private bool _allHaveCapRdpmc;
 
     private readonly List<PerfEventCounter> _counters = new();
     private nint[] _counterMmaps = null!;
     private nint* _counterMmapsPtr = null!;
     private ulong[] _counterIds = null!;
     private CounterValue[] _counterValues = null!;
-    private CounterValue* _counterValuesPtr = null!;
+    internal CounterValue* CounterValuesPtr = null!;
     private CounterValue[] _previousCounterValues = null!;
-    private CounterValue* _previousCounterValuesPtr = null!;
+    internal CounterValue* PreviousCounterValuesPtr = null!;
     private GroupReader _groupReader;
 
-    public bool HasFastPath => _allHaveCapRdpmc;
+    public PerfEventKnownCounters Counters { get; }
 
     private PerfEventCounterSession(int osThreadId, int cpu)
     {
         Pid = osThreadId;
         Cpu = cpu;
+        Counters = new PerfEventKnownCounters(_counters);
     }
 
     public static PerfEventCounterSession New(int osThreadId = -1, int cpu = -1)
@@ -95,19 +101,37 @@ public unsafe class PerfEventCounterSession : IDisposable
 
     public PerfEventCounterSession AddHardwareCounter(PerfHwId counter)
     {
-        AddCounter(PerfTypeId.Hardware, (ulong)counter);
+        AddHardwareCounter(counter, out _);
+        return this;
+    }
+
+    public PerfEventCounterSession AddHardwareCounter(PerfHwId counter, out PerfEventCounter handle)
+    {
+        handle = AddCounter(PerfTypeId.Hardware, (ulong)counter);
         return this;
     }
 
     public PerfEventCounterSession AddSoftwareCounter(PerfSwIds counter)
     {
-        AddCounter(PerfTypeId.Software, (ulong)counter);
+        AddSoftwareCounter(counter, out _);
+        return this;
+    }
+
+    public PerfEventCounterSession AddSoftwareCounter(PerfSwIds counter, out PerfEventCounter handle)
+    {
+        handle = AddCounter(PerfTypeId.Software, (ulong)counter);
         return this;
     }
 
     public PerfEventCounterSession AddCacheCounter(PerfCacheId counter)
     {
-        AddCounter(PerfTypeId.HardwareCache, (ulong)counter);
+        AddCacheCounter(counter, out _);
+        return this;
+    }
+
+    public PerfEventCounterSession AddCacheCounter(PerfCacheId counter, out PerfEventCounter handle)
+    {
+        handle = AddCounter(PerfTypeId.HardwareCache, (ulong)counter);
         return this;
     }
 
@@ -126,7 +150,7 @@ public unsafe class PerfEventCounterSession : IDisposable
         throw new NotImplementedException($"{nameof(PerfTypeId.Breakpoint)} counters are not implemented yet.");
     }
 
-    private void AddCounter(PerfTypeId type, ulong config)
+    private PerfEventCounter AddCounter(PerfTypeId type, ulong config)
     {
         EnsureNotOpened();
 
@@ -135,6 +159,8 @@ public unsafe class PerfEventCounterSession : IDisposable
 
         var counter = new PerfEventCounter(this, type, config);
         _counters.Add(counter);
+        Counters.SetCounter(counter);
+        return counter;
     }
 
     public PerfEventCounterSession Open()
@@ -148,7 +174,8 @@ public unsafe class PerfEventCounterSession : IDisposable
         try
         {
             _groupLeaderFd = -1;
-            _allHaveCapRdpmc = true;
+            HasUserRdpmc = true;
+            HasUserTime = true;
 
             var pinned = _pinned;
 
@@ -176,9 +203,12 @@ public unsafe class PerfEventCounterSession : IDisposable
                 if (mmapPage < 0)
                     ThrowLastPInvokeError($"mmap(perf fd={fd}) failed");
 
-                var hasCapRdpmc = (((PerfEventMMapPage*)mmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserRdpmc) != 0;
-                _allHaveCapRdpmc &= hasCapRdpmc;
-
+                var hasCapUserRdpmc = (((PerfEventMMapPage*)mmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserRdpmc) != 0;
+                var hasCapUserTime = (((PerfEventMMapPage*)mmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserTime) != 0;
+                
+                HasUserRdpmc &= hasCapUserRdpmc;
+                HasUserTime &= hasCapUserTime;
+                
                 counter.MmapPage = mmapPage;
             }
 
@@ -193,23 +223,26 @@ public unsafe class PerfEventCounterSession : IDisposable
             }
 
             _counterValues = GC.AllocateArray<CounterValue>(_counters.Count, true);
-            _counterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_counterValues));
+            CounterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_counterValues));
 
             _previousCounterValues = GC.AllocateArray<CounterValue>(_counters.Count, true);
-            _previousCounterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
+            PreviousCounterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
 
             _groupReader = new GroupReader(_groupLeaderFd, _counterIds.Length);
-            
+
             if (_enabled)
                 EnableGroup(_groupLeaderFd);
 
-            // TODO Must try to read group and check the result is not EoF
+            // For pinned we must try to read group and check the result is not EoF. Do that early here.
             ReadSlow();
-            
-            if(_allHaveCapRdpmc)
+
+            if (HasUserRdpmc)
                 ReadFast();
 
+            CalibrateOverhead();
+
             ResetGroup(_groupLeaderFd);
+            Read();
         }
         catch
         {
@@ -220,15 +253,45 @@ public unsafe class PerfEventCounterSession : IDisposable
         return this;
     }
 
-    public void Read()
+    private void CalibrateOverhead()
+    {
+        for (int i = 0; i < OverheadCalibrationIterations; i++)
+        {
+            Read();
+            Read();
+        }
+
+        for (int i = 0; i < OverheadCalibrationIterations; i++)
+        {
+            Read();
+            Read();
+
+            foreach (PerfEventCounter counter in _counters)
+            {
+                var pairOverhead = counter.RawDelta.Value;
+
+                if (i == 0 || pairOverhead < counter.PairReadOverhead.Value)
+                {
+                    counter.PairReadOverhead = new CounterValue { Value = pairOverhead };
+                    Console.WriteLine($"Set overhead for counter {counter} to: {pairOverhead}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Read counters
+    /// </summary>
+    /// <param name="forceSyscallRead">Use slower but atomic syscall read() even if the fast path is supported.</param>
+    public void Read(bool forceSyscallRead = false)
     {
         EnsureOpened();
 
-        var tmp = _previousCounterValuesPtr;
-        _previousCounterValuesPtr = _counterValuesPtr;
-        _counterValuesPtr = tmp;
+        var tmp = PreviousCounterValuesPtr;
+        PreviousCounterValuesPtr = CounterValuesPtr;
+        CounterValuesPtr = tmp;
 
-        if (_allHaveCapRdpmc)
+        if (!forceSyscallRead && HasUserRdpmc)
             ReadFast();
         else
             ReadSlow();
@@ -237,30 +300,44 @@ public unsafe class PerfEventCounterSession : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void ReadFast()
     {
-        if (ReadPerfProgrammableCounters((nint)_counterMmapsPtr, (nint)_counterValuesPtr, (nuint)_counters.Count) != 0)
-            throw new InvalidOperationException("Cannot read counters using the fast path despite all mmap advertised the support for CapUserRdpmc");
+        if (ReadPerfProgrammableCounters((nint)_counterMmapsPtr, (nint)CounterValuesPtr, (nuint)_counters.Count) != 0)
+            throw new InvalidOperationException("Cannot use the fast path despite all mmap advertised the support for CapUserRdpmc");
     }
 
     internal void ReadSlow()
     {
-        _groupReader.Read();
-        // TODO Read into _counterValuesPtr
-        
-        var span = _groupReader.Current;
-        
-        // Fix-up order
+        var groupReader = _groupReader;
+        groupReader.Read();
+
+        var span = groupReader.Span;
+
+        // Ensure order
         ulong[] counterIds = _counterIds;
         for (int i = 0; i < counterIds.Length; i++)
         {
             ulong expectedId = (uint)counterIds[i];
-            
-            if(span[i].Id == expectedId)
-                continue;
-            
-            // TODO
+
+            GroupReader.ValueWithId current = span[i];
+
+            if (current.Id != expectedId)
+            {
+                for (int j = i + 1; j < span.Length; j++)
+                {
+                    GroupReader.ValueWithId value = span[j];
+                    if (value.Id != expectedId)
+                        continue;
+
+                    // span[i] = value; No need if the span is not reused
+                    span[j] = current;
+                    current = value;
+                    break;
+                }
+            }
+
+            CounterValuesPtr[i].Value = current.Value;
+            CounterValuesPtr[i].TimeRunning = groupReader.TimeRunning;
+            CounterValuesPtr[i].TimeEnabled = groupReader.TimeEnabled;
         }
-        
-        throw new NotImplementedException();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -308,10 +385,10 @@ public unsafe class PerfEventCounterSession : IDisposable
         {
             try
             {
-                if (counter.MmapPage > 0)
+                if (counter.MmapPage >= 0)
                     _ = munmap(counter.MmapPage, (nuint)Environment.SystemPageSize);
 
-                if (counter.Fd > 0)
+                if (counter.Fd >= 0)
                     _ = close(counter.Fd);
             }
             catch
@@ -332,86 +409,6 @@ public unsafe class PerfEventCounterSession : IDisposable
         DoDispose();
     }
 
-
-    public class PerfEventCounter
-    {
-        public PerfEventCounterSession Session { get; }
-        public PerfTypeId Type { get; }
-        public ulong Config { get; }
-        internal int Fd = -1;
-        internal nint MmapPage;
-        internal ulong Id;
-        internal int Index;
-
-        public unsafe bool HasUserTime => MmapPage > 0 && (((PerfEventMMapPage*)MmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserTime) != 0;
-        public unsafe bool HasUserRdpmc => MmapPage > 0 && (((PerfEventMMapPage*)MmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserRdpmc) != 0;
-
-        internal PerfEventCounter(PerfEventCounterSession session, PerfTypeId type, ulong config)
-        {
-            Session = session;
-            Type = type;
-            Config = config;
-        }
-
-        // TODO Add Value and time tracking
-
-        public string Name => field ??= GetName(Type, Config);
-
-        internal static string GetName(PerfTypeId type, ulong config)
-        {
-            string subName = "";
-            switch (type)
-            {
-                case PerfTypeId.Hardware:
-                    subName = $"{((PerfHwId)config):G}";
-                    break;
-                case PerfTypeId.Software:
-                    subName = $"{((PerfSwIds)config):G}";
-                    break;
-                case PerfTypeId.Tracepoint:
-                    break;
-                case PerfTypeId.HardwareCache:
-                    subName = $"{((PerfCacheId)config):G}";
-                    break;
-                case PerfTypeId.Raw:
-                    break;
-                case PerfTypeId.Breakpoint:
-                    break;
-                default:
-                    throw new ArgumentOutOfRangeException();
-            }
-
-            var name = $"{type:G}:{subName}";
-            return name;
-        }
-
-        public override string ToString()
-        {
-            return Name; // TODO Add value
-        }
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct CounterValue
-    {
-        public ulong Value;
-        public ulong TimeEnabled;
-        public ulong TimeRunning;
-
-        public ulong ScaledValue => ScaleToUInt64(Value, TimeEnabled, TimeRunning);
-
-        private static ulong ScaleToUInt64(ulong value, ulong timeEnabled, ulong timeRunning)
-        {
-            if (timeEnabled == timeRunning)
-                return value;
-
-            if (timeRunning == 0)
-                return 0;
-
-            return (ulong)((double)value * timeEnabled / timeRunning);
-        }
-    }
-
     private sealed class GroupReader
     {
         // Read format flags are set in NativeMethods.CreateAttr
@@ -430,11 +427,8 @@ public unsafe class PerfEventCounterSession : IDisposable
         private const int HeaderSize = 3 * sizeof(ulong);
 
         // ReSharper disable PrivateFieldCanBeConvertedToLocalVariable : GC tracking
-        private readonly byte[] _currentBuffer;
-        private ulong* _currentBufferPtr;
-
-        private readonly byte[] _previousBuffer;
-        private ulong* _previousBufferPtr;
+        private readonly byte[] _buffer;
+        private ulong* _bufferPtr;
 
         private readonly nuint _bufferLen;
 
@@ -452,45 +446,27 @@ public unsafe class PerfEventCounterSession : IDisposable
 
             _bufferLen = (nuint)(HeaderSize + count * Unsafe.SizeOf<ValueWithId>());
 
-            _currentBuffer = GC.AllocateArray<byte>((int)_bufferLen, true);
-            _currentBufferPtr = (ulong*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_currentBuffer));
-
-            _previousBuffer = GC.AllocateArray<byte>((int)_bufferLen, true);
-            _previousBufferPtr = (ulong*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousBuffer));
+            _buffer = GC.AllocateArray<byte>((int)_bufferLen, true);
+            _bufferPtr = (ulong*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_buffer));
         }
 
         public int Count { get; }
 
-        public ulong Nr => _currentBufferPtr[0];
+        public ulong Nr => _bufferPtr[0];
 
-        public ulong TimeEnabled => _currentBufferPtr[1];
+        public ulong TimeEnabled => _bufferPtr[1];
 
-        public ulong TimeRunning => _currentBufferPtr[2];
+        public ulong TimeRunning => _bufferPtr[2];
 
-        public ref ValueWithId this[int index]
-        {
-            get
-            {
-                if ((uint)index >= (uint)Count)
-                    throw new ArgumentOutOfRangeException(nameof(index));
-
-                return ref Unsafe.AsRef<ValueWithId>((byte*)_currentBufferPtr + HeaderSize + (uint)(index * Unsafe.SizeOf<ValueWithId>()));
-            }
-        }
-
-        public Span<ValueWithId> Current => new((byte*)_currentBufferPtr + HeaderSize, checked((int)_currentBufferPtr[0]));
-        public Span<ValueWithId> Previous => new((byte*)_previousBufferPtr + HeaderSize, checked((int)_previousBufferPtr[0]));
+        public Span<ValueWithId> Span => new((byte*)_bufferPtr + HeaderSize, checked((int)_bufferPtr[0]));
 
         public void Read()
         {
-            var tmp = _previousBufferPtr;
-            _previousBufferPtr = _currentBufferPtr;
-            _currentBufferPtr = tmp;
-
-            nint bytesRead = read(_fd, (nint)_currentBufferPtr, _bufferLen);
+            nint bytesRead = read(_fd, (nint)_bufferPtr, _bufferLen);
 
             if (bytesRead == 0)
-                throw new InvalidOperationException("perf_event read returned EOF; pinned event/group is likely unschedulable or in error state.");
+                throw new InvalidOperationException(
+                    "perf_event read returned EOF; pinned event/group is likely unschedulable or in error state.");
 
             if (bytesRead < 0)
                 ThrowLastPInvokeError("perf_event read failed.");

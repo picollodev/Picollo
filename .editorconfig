@@ -3,6 +3,8 @@ root = true
 # All files
 [*]
 indent_style = space
+max_line_length = 140
+
 
 # Xml files
 [*.xml]
@@ -195,6 +197,8 @@ csharp_space_between_square_brackets = false
 # Wrapping preferences
 csharp_preserve_single_line_blocks = true
 csharp_preserve_single_line_statements = true
+place_simple_initializer_on_single_line = true
+wrap_object_and_collection_initializer_style = chop_if_long
 
 #### Naming styles ####
 [*.{cs,vb}]

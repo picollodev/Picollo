@@ -1,9 +1,9 @@
 ﻿using System;
 using System.Text;
 
-namespace Picollo.PerfEvent;
+namespace Picollo;
 
-public class PerfCounterSnapshot
+public class PerfEventKnownCountersSnapshot
 {
     public struct HardwareCounters
     {
@@ -57,11 +57,6 @@ public class PerfCounterSnapshot
     private SoftwareCounters _software;
     private CacheCounters _caches;
 
-    public DateTime StartUtc { get; internal set; }
-    public DateTime StopUtc { get; internal set; }
-    public ulong TimeEnabled { get; internal set; }
-    public ulong TimeRunning { get; internal set; }
-
     public HardwareCounters Hardware => _hardware;
     public SoftwareCounters Software => _software;
     public CacheCounters Caches => _caches;
@@ -70,10 +65,57 @@ public class PerfCounterSnapshot
     internal ref SoftwareCounters GetSoftwareCounters() => ref _software;
     internal ref CacheCounters GetCacheCounters() => ref _caches;
 
-    public double AdjustedCycles =>
-        TimeRunning == 0 || TimeEnabled == 0 || TimeRunning >= TimeEnabled
-            ? Hardware.CpuCycles.GetValueOrDefault()
-            : Hardware.CpuCycles.GetValueOrDefault() * (double)TimeEnabled / TimeRunning;
+    public void PopulateFrom(PerfEventKnownCounters counters, bool useDeltas = false)
+    {
+        ArgumentNullException.ThrowIfNull(counters);
+
+        Clear();
+
+        ref var hardware = ref GetHardwareCounters();
+        ref var software = ref GetSoftwareCounters();
+        ref var caches = ref GetCacheCounters();
+
+        var knownHardware = counters.Hardware;
+        var knownSoftware = counters.Software;
+        var knownCaches = counters.Caches;
+
+        hardware.CpuCycles = GetValue(knownHardware.CpuCycles, useDeltas);
+        hardware.Instructions = GetValue(knownHardware.Instructions, useDeltas);
+        hardware.CacheReferences = GetValue(knownHardware.CacheReferences, useDeltas);
+        hardware.CacheMisses = GetValue(knownHardware.CacheMisses, useDeltas);
+        hardware.BranchInstructions = GetValue(knownHardware.BranchInstructions, useDeltas);
+        hardware.BranchMisses = GetValue(knownHardware.BranchMisses, useDeltas);
+        hardware.BusCycles = GetValue(knownHardware.BusCycles, useDeltas);
+        hardware.StalledCyclesFrontend = GetValue(knownHardware.StalledCyclesFrontend, useDeltas);
+        hardware.StalledCyclesBackend = GetValue(knownHardware.StalledCyclesBackend, useDeltas);
+        hardware.RefCpuCycles = GetValue(knownHardware.RefCpuCycles, useDeltas);
+
+        software.CpuClock = GetValue(knownSoftware.CpuClock, useDeltas);
+        software.TaskClock = GetValue(knownSoftware.TaskClock, useDeltas);
+        software.PageFaults = GetValue(knownSoftware.PageFaults, useDeltas);
+        software.ContextSwitches = GetValue(knownSoftware.ContextSwitches, useDeltas);
+        software.CpuMigrations = GetValue(knownSoftware.CpuMigrations, useDeltas);
+        software.PageFaultsMin = GetValue(knownSoftware.PageFaultsMin, useDeltas);
+        software.PageFaultsMaj = GetValue(knownSoftware.PageFaultsMaj, useDeltas);
+        software.AlignmentFaults = GetValue(knownSoftware.AlignmentFaults, useDeltas);
+        software.EmulationFaults = GetValue(knownSoftware.EmulationFaults, useDeltas);
+        software.Dummy = GetValue(knownSoftware.Dummy, useDeltas);
+        software.BpfOutput = GetValue(knownSoftware.BpfOutput, useDeltas);
+        software.CgroupSwitches = GetValue(knownSoftware.CgroupSwitches, useDeltas);
+
+        caches.L1DReadAccess = GetValue(knownCaches.L1DReadAccess, useDeltas);
+        caches.L1DReadMiss = GetValue(knownCaches.L1DReadMiss, useDeltas);
+        caches.L1DWriteAccess = GetValue(knownCaches.L1DWriteAccess, useDeltas);
+        caches.L1DWriteMiss = GetValue(knownCaches.L1DWriteMiss, useDeltas);
+        caches.L1IReadAccess = GetValue(knownCaches.L1IReadAccess, useDeltas);
+        caches.L1IReadMiss = GetValue(knownCaches.L1IReadMiss, useDeltas);
+        caches.L1IWriteAccess = GetValue(knownCaches.L1IWriteAccess, useDeltas);
+        caches.L1IWriteMiss = GetValue(knownCaches.L1IWriteMiss, useDeltas);
+        caches.LLReadAccess = GetValue(knownCaches.LLReadAccess, useDeltas);
+        caches.LLReadMiss = GetValue(knownCaches.LLReadMiss, useDeltas);
+        caches.LLWriteAccess = GetValue(knownCaches.LLWriteAccess, useDeltas);
+        caches.LLWriteMiss = GetValue(knownCaches.LLWriteMiss, useDeltas);
+    }
 
     public double InstructionsPerCycle
     {
@@ -104,10 +146,6 @@ public class PerfCounterSnapshot
 
     public void Clear()
     {
-        StartUtc = default;
-        StopUtc = default;
-        TimeEnabled = default;
-        TimeRunning = default;
         _hardware = default;
         _software = default;
         _caches = default;
@@ -116,17 +154,13 @@ public class PerfCounterSnapshot
     public string Dump()
     {
         var sb = new StringBuilder(640);
-        sb.AppendLine($"StartUtc: {StartUtc:O}");
-        sb.AppendLine($"StopUtc: {StopUtc:O}");
-        sb.AppendLine($"TimeEnabled: {TimeEnabled:N0}");
-        sb.AppendLine($"TimeRunning: {TimeRunning:N0}");
 
         AppendHardware(sb, Hardware);
         AppendSoftware(sb, Software);
         AppendCaches(sb, Caches);
 
-        sb.AppendLine($"AdjustedCycles: {AdjustedCycles:N0}");
         sb.AppendLine($"InstructionsPerCycle: {InstructionsPerCycle:N2}");
+        // TODO MPKI / miss ratios if they are not null
 
         return sb.ToString();
 
@@ -199,5 +233,13 @@ public class PerfCounterSnapshot
             sb.AppendLine($"  {name}: {value:N0}");
             return true;
         }
+    }
+
+    private static ulong? GetValue(global::Picollo.PerfEventCounter? counter, bool useDeltas)
+    {
+        if (counter == null)
+            return null;
+
+        return (useDeltas ? counter.Delta : counter.Current).ScaledValue;
     }
 }

@@ -172,13 +172,19 @@ void has_cap_user(int32_t* has_user_time, int32_t* has_user_rdpmc)
     close(fd);
 }
 
-// https://github.com/icl-utk-edu/papi/blob/7294c1a6b9793fead3a60805a9ab188a9af66445/src/components/perf_event/perf_helpers.h#L244
-static inline int read_perf_programmable_counter(const struct perf_event_mmap_page* pc, uint64_t* counter_value)
+// Modified from https://github.com/icl-utk-edu/papi/blob/7294c1a6b9793fead3a60805a9ab188a9af66445/src/components/perf_event/perf_helpers.h#L244
+static inline __attribute__((always_inline)) int read_perf_programmable_counter(const struct perf_event_mmap_page* pc, uint64_t* counter_value)
 {
-    uint32_t seq, index, width;
+    uint32_t seq, index, width, time_mult = 0, time_shift = 0;
     int64_t count;
     uint64_t enabled, running;
+    uint64_t cyc = 0, time_offset = 0; //, time_cycles = 0, time_mask = ~0ULL;
     int64_t pmc = 0;
+
+     /* In Picollo the fast path is called only when all events report cap_user_rdpmc support */
+     /* Not having it here indicates misuse */
+    if (pc->cap_user_rdpmc)
+        return -1;
 
     do {
         /* The kernel increments pc->lock any time */
@@ -199,26 +205,28 @@ static inline int read_perf_programmable_counter(const struct perf_event_mmap_pa
         /* time_running is time the event was actually running */
         running = pc->time_running;
 
-        /* actually do the measurement */
-
+        /* if cap_user_time is set, we can use rdtsc */
+        /* to calculate more exact enabled/running time */
+        /* for more accurate multiplex calculations */
+        if ((enabled != running) && pc->cap_user_time) {
+            cyc = read_rdtsc();
+            time_offset = pc->time_offset;
+            time_mult = pc->time_mult;
+            time_shift = pc->time_shift;
+        }
+        
         /* Index of register to read */
         /* 0 means stopped/not-active */
         /* Need to subtract 1 to get actual index to rdpmc() */
         index = pc->index;
 
-        /* count is the value of the counter the last time */
-        /* the kernel read it */
-        /* If we don't sign extend it, we get large negative */
-        /* numbers which break if an IOC_RESET is done */
+        /* Count is the value of the counter the last time the kernel read it */
         width = pc->pmc_width;
         count = pc->offset;
 
-        /* Ugh, libpfm4 perf_event.h has cap_usr_rdpmc */
-        /* while actual perf_event.h has cap_user_rdpmc */
-
-        /* Only read if rdpmc enabled and event index valid */
-        /* Otherwise return the older (out of date?) count value */
-        if (pc->cap_user_rdpmc && index) {
+        /* Only read if event index valid */
+        /* Otherwise return the older count value */
+        if (index) {
 
             /* Read counter value */
             pmc = (int64_t)read_pmc(index - 1u);
@@ -229,14 +237,23 @@ static inline int read_perf_programmable_counter(const struct perf_event_mmap_pa
 
             /* add current count into the existing kernel count */
             count += pmc;
-        } else {
-            return -1;
         }
 
         __asm__ volatile("" ::: "memory");
 
     } while (pc->lock != seq);
 
+    if (enabled != running)
+    {
+	    uint64_t quot = (cyc >> time_shift);
+        uint64_t rem = cyc & (((uint64_t)1 << time_shift) - 1);
+        uint64_t delta = time_offset + quot * time_mult + ((rem * time_mult) >> time_shift);
+        
+        enabled += delta;
+        if (index)
+            running += delta;
+    }
+    
     counter_value[0] = (uint64_t)count;
     counter_value[1] = enabled;
     counter_value[2] = running;
