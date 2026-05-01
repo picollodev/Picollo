@@ -27,7 +27,7 @@
 
   <Target Name="CompileNativeLinux" BeforeTargets="BeforeBuild" Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux))) AND $([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture) == 'X64'">
     <Exec Command="bash ./build_gcc.sh"/>
-    <Message Importance="High" Text="Successfully compiled picollo_native.so with -O3"/>
+    <Message Importance="High" Text="Successfully compiled picollo_native.so"/>
   </Target>
 
   <Target Name="CheckNativeExistsBeforePublish" BeforeTargets="BeforePublish">

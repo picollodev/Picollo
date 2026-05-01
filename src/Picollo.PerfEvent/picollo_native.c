@@ -133,7 +133,7 @@ static inline __attribute__((always_inline)) int read_perf_programmable_counter(
 
      /* In Picollo the fast path is called only when all events report cap_user_rdpmc support */
      /* Not having it here indicates misuse */
-    if (pc->cap_user_rdpmc)
+    if (!pc->cap_user_rdpmc)
         return -1;
 
     do {
