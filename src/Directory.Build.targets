@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <_CopyLocalPerfEventNative Condition="$(MSBuildProjectName.Contains('.Tests')) or $(MSBuildProjectName.Contains('.Runner'))">true</_CopyLocalPerfEventNative>
+  </PropertyGroup>
+
+  <Target Name="CopyLocalPerfEventNative"
+          AfterTargets="CopyFilesToOutputDirectory"
+          Condition="'$(_CopyLocalPerfEventNative)' == 'true' and Exists('$(MSBuildThisFileDirectory)Picollo.PerfEvent/picollo_native.so')">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)Picollo.PerfEvent/picollo_native.so"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
