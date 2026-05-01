@@ -179,8 +179,9 @@ static inline __attribute__((always_inline)) int read_perf_programmable_counter(
         if (index) {
 
             /* Read counter value */
+            // __asm__ volatile("lfence" ::: "memory");
             pmc = (int64_t)read_pmc(index - 1u);
-
+            // __asm__ volatile("lfence" ::: "memory");
             /* sign extend result */
             pmc <<= (64u - width);
             pmc >>= (64u - width);

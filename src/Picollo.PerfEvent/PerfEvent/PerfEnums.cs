@@ -16,31 +16,131 @@ public enum PerfTypeId : uint
 
 public enum PerfHwId : ulong
 {
+    /// <summary>
+    /// Total cycles.  Be wary of what happens during CPU frequency scaling.
+    /// </summary>
     CpuCycles = 0,
+    
+    /// <summary>
+    /// Retired instructions.  Be careful, these can be affected by various issues, most notably
+    /// hardware interrupt counts.
+    /// </summary>
     Instructions = 1,
+    
+    /// <summary>
+    /// Cache accesses.  Usually this indicates Last
+    /// Level Cache accesses but this may vary
+    /// depending on your CPU.  This may include
+    /// prefetches and coherency messages; again, this
+    /// depends on the design of your CPU.
+    /// </summary>
     CacheReferences = 2,
+    
+    /// <summary>
+    /// Cache misses.  Usually this indicates Last Level Cache misses; this is intended to be used
+    /// in conjunction with the <see cref="CacheReferences"/> event to calculate cache miss rates.
+    /// </summary>
     CacheMisses = 3,
+    
+    /// <summary>
+    /// Retired branch instructions.
+    /// </summary>
     BranchInstructions = 4,
+    
+    /// <summary>
+    /// Mispredicted branch instructions.
+    /// </summary>
     BranchMisses = 5,
+    
+    /// <summary>
+    /// Bus cycles, which can be different from total cycles.
+    /// </summary>
     BusCycles = 6,
-    StalledCyclesFrontend = 7,
-    StalledCyclesBackend = 8,
+    
+    /// <summary>
+    /// Stalled cycles during issue.
+    /// </summary>
+    StalledCyclesFrontend = 7, 
+    
+    /// <summary>
+    /// Stalled cycles during retirement.
+    /// </summary>
+    StalledCyclesBackend = 8, 
+    
+    /// <summary>
+    /// Total cycles; not affected by CPU frequency scaling.
+    /// </summary>
     RefCpuCycles = 9
 }
 
 public enum PerfSwIds : ulong
 {
+    /// <summary>
+    /// This reports the CPU clock, a high-resolution per-CPU timer.
+    /// </summary>
     CpuClock = 0,
+    
+    /// <summary>
+    /// This reports a clock count specific to the task that is running.
+    /// </summary>
     TaskClock = 1,
+    
+    /// <summary>
+    /// This reports the number of page faults.
+    /// </summary>
     PageFaults = 2,
+    
+    /// <summary>
+    /// This counts context switches.  Until Linux  2.6.34, these were all reported as user-space
+    /// events, after that they are reported as happening in the kernel.
+    /// </summary>
     ContextSwitches = 3,
+    
+    /// <summary>
+    /// This reports the number of times the process has migrated to a new CPU.
+    /// </summary>
     CpuMigrations = 4,
+    
+    /// <summary>
+    /// This counts the number of minor page faults. These did not require disk I/O to handle.
+    /// </summary>
     PageFaultsMin = 5,
+    
+    /// <summary>
+    /// This counts the number of major page faults. These required disk I/O to handle.
+    /// </summary>
     PageFaultsMaj = 6,
+    
+    /// <summary>
+    /// This counts the number of alignment faults. These happen when unaligned memory accesses
+    /// happen; the kernel can handle these but it reduces performance.  This happens only on some
+    /// architectures (never on x86).
+    /// </summary>
     AlignmentFaults = 7,
+    
+    /// <summary>
+    /// This counts the number of emulation faults. The kernel sometimes traps on unimplemented
+    /// instructions and emulates them for user space. This can negatively impact performance.
+    /// </summary>
     EmulationFaults = 8,
+    
+    /// <summary>
+    /// This is a placeholder event that counts nothing.  Informational sample record types
+    /// such as mmap or comm must be associated with an active event.  This dummy event allows
+    /// gathering such records without requiring a counting event.
+    /// </summary>
     Dummy = 9,
+    
+    /// <summary>
+    /// This is used to generate raw sample data from BPF.  BPF programs can write to this event
+    /// using bpf_perf_event_output helper.
+    /// </summary>
     BpfOutput = 10,
+    
+    /// <summary>
+    /// This counts context switches to a task in a different cgroup.  In other words, if the next
+    /// task is in the same cgroup, it won't count the switch.
+    /// </summary>
     CgroupSwitches = 11
 }
 

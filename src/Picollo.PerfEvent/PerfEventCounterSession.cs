@@ -21,12 +21,12 @@ public unsafe class PerfEventCounterSession : IDisposable
 
     public bool HasUserRdpmc { get; private set; }
     public bool HasUserTime { get; private set; }
-    
+
     private bool _pinned;
     private bool _enabled;
     private bool _withKernel;
 
-    private const int OverheadCalibrationIterations = 32;
+    internal const int OverheadCalibrationIterations = 1000;
 
     private int _state; // -1 disposed, 0 not opened, 1 opened
 
@@ -205,10 +205,10 @@ public unsafe class PerfEventCounterSession : IDisposable
 
                 var hasCapUserRdpmc = (((PerfEventMMapPage*)mmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserRdpmc) != 0;
                 var hasCapUserTime = (((PerfEventMMapPage*)mmapPage)->Capabilities & PerfEventMmapCapabilities.CapUserTime) != 0;
-                
+
                 HasUserRdpmc &= hasCapUserRdpmc;
                 HasUserTime &= hasCapUserTime;
-                
+
                 counter.MmapPage = mmapPage;
             }
 
@@ -255,6 +255,8 @@ public unsafe class PerfEventCounterSession : IDisposable
 
     private void CalibrateOverhead()
     {
+        ResetGroup(_groupLeaderFd);
+
         for (int i = 0; i < OverheadCalibrationIterations; i++)
         {
             Read();
@@ -265,17 +267,28 @@ public unsafe class PerfEventCounterSession : IDisposable
         {
             Read();
             Read();
-
+            
+            // TODO Use histograms
+            
             foreach (PerfEventCounter counter in _counters)
             {
                 var pairOverhead = counter.RawDelta.Value;
-
-                if (i == 0 || pairOverhead < counter.PairReadOverhead.Value)
+                counter.PairReadOverheadList.Add(pairOverhead);
+                if ((i == 0 || pairOverhead > counter.PairReadOverhead.Value && pairOverhead > 0))
                 {
                     counter.PairReadOverhead = new CounterValue { Value = pairOverhead };
-                    Console.WriteLine($"Set overhead for counter {counter} to: {pairOverhead}");
+                    // Console.WriteLine($"----> Set overhead for counter {counter.Name} to: {pairOverhead}");
                 }
+
+                // Console.WriteLine($"PairOverhead for counter {counter.Name}: {pairOverhead}");
             }
+        }
+
+        foreach (PerfEventCounter counter in _counters)
+        {
+            counter.PairReadOverheadList.Sort();
+            counter.PairReadOverhead = new CounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 20] };
+            // Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead.Value}");
         }
     }
 
@@ -283,6 +296,7 @@ public unsafe class PerfEventCounterSession : IDisposable
     /// Read counters
     /// </summary>
     /// <param name="forceSyscallRead">Use slower but atomic syscall read() even if the fast path is supported.</param>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization | MethodImplOptions.NoInlining)]
     public void Read(bool forceSyscallRead = false)
     {
         EnsureOpened();

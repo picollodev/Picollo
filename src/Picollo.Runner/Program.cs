@@ -10,13 +10,19 @@ var pinned = Picollo.CpuUtils.PrepareBenchmarkThread(8);
 Console.WriteLine($"Pinned: {pinned}");
 
 using var perfSession = PerfEventCounterSession
-	.New(Environment.ProcessId)
+    .New(Environment.ProcessId)
     .WithPinned(true)
     .WithEnabled(true)
-	.AddHardwareCounter(PerfHwId.CpuCycles)
-	.AddHardwareCounter(PerfHwId.Instructions)
-	.AddHardwareCounter(PerfHwId.RefCpuCycles);
-perfSession.Open();
+    // .AddHardwareCounter(PerfHwId.CpuCycles)
+    // .AddHardwareCounter(PerfHwId.Instructions)
+    // .AddHardwareCounter(PerfHwId.RefCpuCycles)
+    // .AddHardwareCounter(PerfHwId.BranchMisses)
+    .AddSoftwareCounter(PerfSwIds.CpuClock)
+    .AddSoftwareCounter(PerfSwIds.PageFaults)
+    .AddSoftwareCounter(PerfSwIds.CpuMigrations)
+    .AddSoftwareCounter(PerfSwIds.Dummy)
+
+    .Open();
  
 // perfSession.GetSnapshot();
 
