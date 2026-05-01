@@ -17,7 +17,7 @@ uintptr_t is_available(void)
     return (uintptr_t)1;
 }
 
-static inline uintptr_t read_pmc(uint32_t ecx)
+static inline __attribute__((always_inline))  uintptr_t read_pmc(uint32_t ecx)
 {
 #if defined(_MSC_VER)
     return (uintptr_t)__rdpmc(ecx);
@@ -84,7 +84,7 @@ void read_core_cycles_and_instructions(uintptr_t* instructions_retired,
   #pragma intrinsic(__rdtscp)
 #endif
 
-static inline uintptr_t read_tsc(void)
+static inline __attribute__((always_inline)) uintptr_t read_tsc(void)
 {
 #if defined(_MSC_VER)
     return (uintptr_t)__rdtsc();
@@ -97,7 +97,7 @@ static inline uintptr_t read_tsc(void)
 #endif
 }
 
-static inline uintptr_t read_tscp(void)
+static inline __attribute__((always_inline)) uintptr_t read_tscp(void)
 {
 #if defined(_MSC_VER)
     unsigned int aux;
@@ -120,56 +120,6 @@ uintptr_t read_rdtsc(void)
 uintptr_t read_rdtscp(void)
 {
     return read_tscp();
-}
-
-void has_cap_user(int32_t* has_user_time, int32_t* has_user_rdpmc)
-{
-    struct perf_event_attr attr;
-    int fd;
-    void* page;
-
-    if (has_user_time != NULL)
-    {
-        *has_user_time = 0;
-    }
-    if (has_user_rdpmc != NULL)
-    {
-        *has_user_rdpmc = 0;
-    }
-
-    memset(&attr, 0, sizeof(attr));
-    attr.size = sizeof(attr);
-    attr.type = PERF_TYPE_HARDWARE;
-    attr.config = PERF_COUNT_HW_CPU_CYCLES;
-    attr.disabled = 1;
-    attr.exclude_kernel = 1;
-    attr.exclude_hv = 1;
-    attr.pinned = 1;
-
-    fd = (int)syscall(SYS_perf_event_open, &attr, 0, -1, -1, 0);
-    if (fd < 0)
-    {
-        return;
-    }
-
-    page = mmap(NULL, (size_t)sysconf(_SC_PAGESIZE), PROT_READ, MAP_SHARED, fd, 0);
-    if (page == MAP_FAILED)
-    {
-        close(fd);
-        return;
-    }
-
-    if (has_user_time != NULL)
-    {
-        *has_user_time = (int32_t)(((const struct perf_event_mmap_page*)page)->cap_user_time ? 1 : 0);
-    }
-    if (has_user_rdpmc != NULL)
-    {
-        *has_user_rdpmc = (int32_t)(((const struct perf_event_mmap_page*)page)->cap_user_rdpmc ? 1 : 0);
-    }
-
-    munmap(page, (size_t)sysconf(_SC_PAGESIZE));
-    close(fd);
 }
 
 // Modified from https://github.com/icl-utk-edu/papi/blob/7294c1a6b9793fead3a60805a9ab188a9af66445/src/components/perf_event/perf_helpers.h#L244

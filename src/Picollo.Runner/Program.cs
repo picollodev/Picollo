@@ -24,10 +24,9 @@ perfSession.Open();
 
 Console.WriteLine($"IsAvailable: {PerfHelpers.IsAvailable()}");
 
-PerfHelpers.HasCapUser(out var hasUserTime, out var hasUserRdpmc);
-Console.WriteLine($"hasUserTime: {hasUserTime}, hasUserRdpmc: {hasUserRdpmc}");
+Console.WriteLine($"hasUserTime: {perfSession.HasUserTime}, hasUserRdpmc: {perfSession.HasUserRdpmc}");
 
-if (!hasUserRdpmc)
+if (!perfSession.HasUserRdpmc)
 {
 	Console.WriteLine("RDPMC user access is not available; skipping RDPMC measurement loop to avoid native crash.");
 	return;
@@ -66,17 +65,6 @@ CollectAndReport48("fixed_ref", static () =>
 	return referenceCycles;
 });
 
-CollectAndReport48("pair_inst", static () =>
-{
-	PerfHelpers.ReadCoreCyclesAndInstructions(out var instructionsRetired, out _);
-	return instructionsRetired;
-});
-CollectAndReport48("pair_core", static () =>
-{
-	PerfHelpers.ReadCoreCyclesAndInstructions(out _, out var coreCycles);
-	return coreCycles;
-});
-
 CollectAndReport64("tsc", static () => PerfHelpers.ReadRdtsc());
 CollectAndReport64("tscp", static () => PerfHelpers.ReadRdtscp());
 CollectAndReport64("stopwatch", static () => unchecked((nuint)Stopwatch.GetTimestamp()));
@@ -91,8 +79,6 @@ MeasureCallRdtsc();
 MeasureCallRdtscp();
 MeasureCallStopwatch();
 MeasureCallFixedTriplet();
-MeasureCallPair();
-
 
 return;
 
@@ -361,32 +347,6 @@ void MeasureCallFixedTriplet()
 	PrintStats("call_fixed_triplet");
 }
 
-void MeasureCallPair()
-{
-	nuint sink = 0;
-
-	sharedSamples.Clear();
-	for (var cycle = 1; cycle <= Cycles; cycle++)
-	{
-		var before = PerfHelpers.ReadReferenceCycles();
-		for (var i = 0; i < CallsPerSample; i++)
-		{
-			PerfHelpers.ReadCoreCyclesAndInstructions(out var a, out var b);
-			sink ^= a ^ b;
-		}
-		var after = PerfHelpers.ReadReferenceCycles();
-		var delta = Delta48(after, before);
-		sharedSamples.Add(delta);
-	}
-
-	if (sink == 0xFFFFFFFFFFFFFFFFUL)
-	{
-		Console.WriteLine("sink guard");
-	}
-
-	PrintStats("call_pair");
-}
-
 void PrintStats(string name)
 {
 	var start = sharedSamples.Count / 2;
@@ -481,13 +441,7 @@ internal static class PerfHelpers
 		out nuint instructionsRetired,
 		out nuint coreCycles,
 		out nuint referenceCycles);
-
-	[DllImport(NativeLibrary, EntryPoint = "read_core_cycles_and_instructions", CallingConvention = CallingConvention.Cdecl)]
-	[SuppressGCTransition]
-	internal static extern void ReadCoreCyclesAndInstructions(
-		out nuint instructionsRetired,
-		out nuint coreCycles);
-
+    
 	[DllImport(NativeLibrary, EntryPoint = "read_rdtsc", CallingConvention = CallingConvention.Cdecl)]
 	[SuppressGCTransition]
 	internal static extern nuint ReadRdtsc();
@@ -495,10 +449,4 @@ internal static class PerfHelpers
 	[DllImport(NativeLibrary, EntryPoint = "read_rdtscp", CallingConvention = CallingConvention.Cdecl)]
 	[SuppressGCTransition]
 	internal static extern nuint ReadRdtscp();
-
-	[DllImport(NativeLibrary, EntryPoint = "has_cap_user", CallingConvention = CallingConvention.Cdecl)]
-	[SuppressGCTransition]
-	internal static extern void HasCapUser(
-		[MarshalAs(UnmanagedType.Bool)] out bool hasUserTime,
-		[MarshalAs(UnmanagedType.Bool)] out bool hasUserRdpmc);
 }
