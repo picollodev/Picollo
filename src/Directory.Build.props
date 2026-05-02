@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <Version>0.0.1-alpha</Version>
+    <Version>0.0.2-alpha</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
     <Authors>Victor Baybekov</Authors>
@@ -11,10 +11,14 @@
     <RepositoryType>git</RepositoryType>
     <Description>Performance Instrumentation and Continuous Observation for Latency and Low-level Optimizations. Tools for serious performance work in .NET</Description>
     <PackageTags>picollo;dotnet</PackageTags>
+    <PackageIcon>Picollo.png</PackageIcon>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <DebugType>embedded</DebugType>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\Picollo.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 </Project>
