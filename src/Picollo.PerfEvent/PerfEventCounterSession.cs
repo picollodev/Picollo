@@ -98,6 +98,19 @@ public unsafe class PerfEventCounterSession : IDisposable
         AddHardwareCounter(PerfHwId.RefCpuCycles);
         return this;
     }
+    
+    public PerfEventCounterSession WithHardwareCounters()
+    {
+        EnsureNotOpened();
+        AddHardwareCounter(PerfHwId.Instructions);
+        AddHardwareCounter(PerfHwId.CpuCycles);
+        AddHardwareCounter(PerfHwId.RefCpuCycles);
+        AddHardwareCounter(PerfHwId.BranchInstructions);
+        AddHardwareCounter(PerfHwId.BranchMisses);
+        AddHardwareCounter(PerfHwId.CacheReferences);
+        AddHardwareCounter(PerfHwId.CacheMisses);
+        return this;
+    }
 
     public PerfEventCounterSession AddHardwareCounter(PerfHwId counter)
     {
@@ -280,15 +293,15 @@ public unsafe class PerfEventCounterSession : IDisposable
                     // Console.WriteLine($"----> Set overhead for counter {counter.Name} to: {pairOverhead}");
                 }
 
-                // Console.WriteLine($"PairOverhead for counter {counter.Name}: {pairOverhead}");
+                Console.WriteLine($"PairOverhead for counter {counter.Name}: {pairOverhead}");
             }
         }
 
         foreach (PerfEventCounter counter in _counters)
         {
             counter.PairReadOverheadList.Sort();
-            counter.PairReadOverhead = new CounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 20] };
-            // Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead.Value}");
+            counter.PairReadOverhead = new CounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10] };
+            Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead.Value}");
         }
     }
 

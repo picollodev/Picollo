@@ -17,7 +17,7 @@ public static unsafe class CpuUtils
         return -1;
     }
 
-    private static nint GetNativeThreadId()
+    public static nint GetOsThreadId()
     {
         if (OperatingSystem.IsWindows())
             return (nint)GetCurrentThreadId();
@@ -58,7 +58,7 @@ public static unsafe class CpuUtils
 
     public static ProcessThread? GetCurrentProcessThread()
     {
-        var tid = GetNativeThreadId();
+        var tid = GetOsThreadId();
         var proc = Process.GetCurrentProcess();
         for (var i = 0; i < proc.Threads.Count; i++)
         {
@@ -86,7 +86,7 @@ public static unsafe class CpuUtils
             setpriority(PRIO_PROCESS, 0, 10);
 
             // Restore current thread to normal priority
-            setpriority((int)GetNativeThreadId(), 0, 0);
+            setpriority((int)GetOsThreadId(), 0, 0);
 
             // Pin to the selected core
             unsafe
@@ -176,7 +176,7 @@ public static unsafe class CpuUtils
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
-            x += y; y += x; x += y; y += x; x += y; y += x; x += y; // y += x;
+            x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             // @formatter:on
         }
 
@@ -265,7 +265,7 @@ public static unsafe class CpuUtils
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
-            x += y; y += x; x += y; y += x; x += y; y += x; x += y; // y += x;
+            x += y; y += x; x += y; y += x; x += y; y += x; x += y; y += x;
             // @formatter:on
         }
 

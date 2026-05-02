@@ -9,18 +9,21 @@ using Picollo.PerfEvent;
 var pinned = Picollo.CpuUtils.PrepareBenchmarkThread(8);
 Console.WriteLine($"Pinned: {pinned}");
 
+var tid = CpuUtils.GetOsThreadId();
+
 using var perfSession = PerfEventCounterSession
-    .New(Environment.ProcessId)
+    .New((int)tid)
     .WithPinned(true)
     .WithEnabled(true)
+    .WithHardwareCounters()
     // .AddHardwareCounter(PerfHwId.CpuCycles)
     // .AddHardwareCounter(PerfHwId.Instructions)
     // .AddHardwareCounter(PerfHwId.RefCpuCycles)
     // .AddHardwareCounter(PerfHwId.BranchMisses)
-    .AddSoftwareCounter(PerfSwIds.CpuClock)
-    .AddSoftwareCounter(PerfSwIds.PageFaults)
-    .AddSoftwareCounter(PerfSwIds.CpuMigrations)
-    .AddSoftwareCounter(PerfSwIds.Dummy)
+    // .AddSoftwareCounter(PerfSwIds.CpuClock)
+    // .AddSoftwareCounter(PerfSwIds.PageFaults)
+    // .AddSoftwareCounter(PerfSwIds.CpuMigrations)
+    // .AddSoftwareCounter(PerfSwIds.Dummy)
 
     .Open();
  
@@ -35,7 +38,7 @@ Console.WriteLine($"hasUserTime: {perfSession.HasUserTime}, hasUserRdpmc: {perfS
 if (!perfSession.HasUserRdpmc)
 {
 	Console.WriteLine("RDPMC user access is not available; skipping RDPMC measurement loop to avoid native crash.");
-	return;
+	// return;
 }
 
 const ulong CounterMask48 = 0x0000FFFFFFFFFFFFUL;
@@ -44,32 +47,17 @@ const int CallsPerSample = 10_000;
 
 var sharedSamples = new List<nuint>(Cycles);
 
+CollectPerfEvent( perfSession);
+
 CollectAndReport48("inst", static () => PerfHelpers.ReadInstructionsRetired());
 
 for(int r = 0; r < 1; r++){
 	CollectAndReport48("core", static () => PerfHelpers.ReadCoreCycles());
 }
 
-
 CollectAndReport48("core_lfence", static () => PerfHelpers.ReadCoreCyclesLfence());
 CollectAndReport48("core_lfence_both", static () => PerfHelpers.ReadCoreCyclesLfenceBoth());
 CollectAndReport48("ref", static () => PerfHelpers.ReadReferenceCycles());
-
-CollectAndReport48("fixed_inst", static () =>
-{
-	PerfHelpers.ReadFixedCounters(out var instructionsRetired, out _, out _);
-	return instructionsRetired;
-});
-CollectAndReport48("fixed_core", static () =>
-{
-	PerfHelpers.ReadFixedCounters(out _, out var coreCycles, out _);
-	return coreCycles;
-});
-CollectAndReport48("fixed_ref", static () =>
-{
-	PerfHelpers.ReadFixedCounters(out _, out _, out var referenceCycles);
-	return referenceCycles;
-});
 
 CollectAndReport64("tsc", static () => PerfHelpers.ReadRdtsc());
 CollectAndReport64("tscp", static () => PerfHelpers.ReadRdtscp());
@@ -84,7 +72,6 @@ MeasureCallRef();
 MeasureCallRdtsc();
 MeasureCallRdtscp();
 MeasureCallStopwatch();
-MeasureCallFixedTriplet();
 
 return;
 
@@ -125,6 +112,66 @@ void CollectAndReport64(string name, Func<nuint> read)
 	}
 
 	PrintStats(name);
+}
+
+void CollectPerfEvent( PerfEventCounterSession session)
+{
+    sharedSamples.Clear();
+    for (var cycle = 1; cycle <= Cycles; cycle++)
+    {
+        session.Read();
+        CpuUtils.AddChain512(Workload.Count);
+        session.Read();
+        var delta = session.Counters.Hardware.CpuCycles!.Delta.Value;
+        sharedSamples.Add((nuint)delta);
+
+        // Console.WriteLine($"cycle: {cycle}, {name}: {delta}");
+    }
+
+    PrintStats("session cycles");
+    
+    sharedSamples.Clear();
+    for (var cycle = 1; cycle <= Cycles; cycle++)
+    {
+        session.Read();
+        CpuUtils.AddChain512(Workload.Count);
+        session.Read();
+        var delta = session.Counters.Hardware.Instructions!.Delta.Value;
+        sharedSamples.Add((nuint)delta);
+
+        // Console.WriteLine($"cycle: {cycle}, {name}: {delta}");
+    }
+
+    PrintStats("session inst");
+    
+    sharedSamples.Clear();
+    for (var cycle = 1; cycle <= Cycles; cycle++)
+    {
+        session.Read();
+        CpuUtils.AddChain512(Workload.Count);
+        session.Read();
+        var delta = session.Counters.Hardware.RefCpuCycles!.Delta.Value;
+        sharedSamples.Add((nuint)delta);
+
+        // Console.WriteLine($"cycle: {cycle}, {name}: {delta}");
+    }
+
+    PrintStats("session refcycles");
+    
+    
+    sharedSamples.Clear();
+    for (var cycle = 1; cycle <= Cycles; cycle++)
+    {
+        session.Read();
+        CpuUtils.AddChain512(Workload.Count);
+        session.Read();
+        var delta = session.Counters.Hardware.BranchMisses!.Delta.Value;
+        sharedSamples.Add((nuint)delta);
+
+        // Console.WriteLine($"cycle: {cycle}, {name}: {delta}");
+    }
+
+    PrintStats("session branches");
 }
 
 void MeasureCallInst()
@@ -327,32 +374,6 @@ void MeasureCallStopwatch()
 	PrintStats("call_stopwatch");
 }
 
-void MeasureCallFixedTriplet()
-{
-	nuint sink = 0;
-
-	sharedSamples.Clear();
-	for (var cycle = 1; cycle <= Cycles; cycle++)
-	{
-		var before = PerfHelpers.ReadReferenceCycles();
-		for (var i = 0; i < CallsPerSample; i++)
-		{
-			PerfHelpers.ReadFixedCounters(out var a, out var b, out var c);
-			// sink ^= a ^ b ^ c;
-		}
-		var after = PerfHelpers.ReadReferenceCycles();
-		var delta = Delta48(after, before);
-		sharedSamples.Add(delta);
-	}
-
-	if (sink == 0xFFFFFFFFFFFFFFFFUL)
-	{
-		Console.WriteLine("sink guard");
-	}
-
-	PrintStats("call_fixed_triplet");
-}
-
 void PrintStats(string name)
 {
 	var start = sharedSamples.Count / 2;
@@ -410,7 +431,7 @@ void PrintStats(string name)
 
 internal static class Workload
 {
-	public static volatile int Count = 10000;
+	public static volatile int Count = 10_000;
 }
 
 internal static class PerfHelpers
@@ -440,13 +461,6 @@ internal static class PerfHelpers
 	[DllImport(NativeLibrary, EntryPoint = "read_reference_cycles", CallingConvention = CallingConvention.Cdecl)]
 	[SuppressGCTransition]
 	internal static extern nuint ReadReferenceCycles();
-
-	[DllImport(NativeLibrary, EntryPoint = "read_fixed_counters", CallingConvention = CallingConvention.Cdecl)]
-	[SuppressGCTransition]
-	internal static extern void ReadFixedCounters(
-		out nuint instructionsRetired,
-		out nuint coreCycles,
-		out nuint referenceCycles);
     
 	[DllImport(NativeLibrary, EntryPoint = "read_rdtsc", CallingConvention = CallingConvention.Cdecl)]
 	[SuppressGCTransition]

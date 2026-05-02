@@ -65,20 +65,6 @@ uintptr_t read_reference_cycles(void)
     return read_pmc(0x40000002u);
 }
 
-void read_fixed_counters(uintptr_t* instructions_retired, uintptr_t* core_cycles, uintptr_t* reference_cycles)
-{
-    *instructions_retired = read_instructions_retired();
-    *core_cycles = read_core_cycles();
-    *reference_cycles = read_reference_cycles();
-}
-
-void read_core_cycles_and_instructions(uintptr_t* instructions_retired,
-                    uintptr_t* core_cycles)
-{
-    *instructions_retired = read_instructions_retired();
-    *core_cycles = read_core_cycles();
-}
-
 #if defined(_MSC_VER)
   #pragma intrinsic(__rdtsc)
   #pragma intrinsic(__rdtscp)

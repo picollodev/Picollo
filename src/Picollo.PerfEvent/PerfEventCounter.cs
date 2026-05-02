@@ -79,6 +79,6 @@ public class PerfEventCounter
 
     public override string ToString()
     {
-        return $"{Name}: {Delta.Value:N0} ({Current.Value:N0}, mpx={Delta.TimeRunning != Delta.TimeEnabled})";
+        return $"{Name}: {Delta.Value:N0} ({Current.Value:N0}, MUX={Delta.TimeRunning != Delta.TimeEnabled})";
     }
 }

@@ -28,10 +28,8 @@ public enum PerfHwId : ulong
     Instructions = 1,
     
     /// <summary>
-    /// Cache accesses.  Usually this indicates Last
-    /// Level Cache accesses but this may vary
-    /// depending on your CPU.  This may include
-    /// prefetches and coherency messages; again, this
+    /// Cache accesses.  Usually this indicates Last Level Cache accesses but this may vary
+    /// depending on your CPU.  This may include prefetches and coherency messages; again, this
     /// depends on the design of your CPU.
     /// </summary>
     CacheReferences = 2,
