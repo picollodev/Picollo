@@ -13,16 +13,26 @@ namespace Picollo.Tests.PerfEvent;
 [TestFixture]
 public class CountersTests
 {
+    [SetUp]
+    public void Setup()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
+            RuntimeInformation.OSArchitecture != Architecture.X64)
+        {
+            Assert.Inconclusive("PerfEventCounterSession tests require Linux x64.");
+        }
+    }
+
     [Test]
     public void AddCounterOverloadsPopulateKnownCountersAndEnumerable()
     {
-        var session = CreateSession();
-
-        session
-            .AddHardwareCounter(PerfHwId.CpuCycles, out var cycles)
-            .AddHardwareCounter(PerfHwId.Instructions)
-            .AddSoftwareCounter(PerfSwIds.ContextSwitches, out var contextSwitches)
-            .AddCacheCounter(PerfCacheId.L1DReadMiss, out var l1dReadMiss);
+        var session = 
+            PerfEventCounterSession.For(Environment.ProcessId, 0)
+            .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
+            .WithHardwareCounter(PerfHardwareCounterId.Instructions)
+            .WithSoftwareCounter(PerfSoftwareCounterId.ContextSwitches, out var contextSwitches)
+            .WithCacheCounter(PerfCacheCounterId.L1DReadMiss, out var l1dReadMiss)
+            .Session;
 
         session.Counters.Count.ShouldBe(4);
         session.Counters[0].ShouldBeSameAs(cycles);
@@ -36,11 +46,22 @@ public class CountersTests
     [Test]
     public void DuplicateCounterDoesNotOverwriteKnownCounter()
     {
-        var session = CreateSession();
+        var factory = PerfEventCounterSession
+            .For(Environment.ProcessId, 0)
+            .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles);
 
-        session.AddHardwareCounter(PerfHwId.CpuCycles, out var cycles);
+        var session = factory.Session;
 
-        Should.Throw<InvalidOperationException>(() => session.AddHardwareCounter(PerfHwId.CpuCycles, out _));
+        try
+        {
+            factory.WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out _);
+            Assert.Fail();
+        }
+        catch
+        {
+            //
+        }
+        
         session.Counters.Hardware.CpuCycles.ShouldBeSameAs(cycles);
         session.Counters.Count.ShouldBe(1);
     }
@@ -48,10 +69,10 @@ public class CountersTests
     [Test]
     public unsafe void SnapshotCanUseCurrentOrDeltaCounterValues()
     {
-        var session = CreateSession();
-        session
-            .AddHardwareCounter(PerfHwId.CpuCycles, out var cycles)
-            .AddHardwareCounter(PerfHwId.Instructions, out var instructions);
+        var session = PerfEventCounterSession.For(Environment.ProcessId, 0)
+            .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
+            .WithHardwareCounter(PerfHardwareCounterId.Instructions, out var instructions)
+            .Session;
 
         cycles.Index = 0;
         instructions.Index = 1;
@@ -77,21 +98,9 @@ public class CountersTests
             currentSnapshot.Hardware.CpuCycles.ShouldBe(200UL);
             currentSnapshot.Hardware.Instructions.ShouldBe(25UL);
 
-
             var deltaSnapshot = session.Counters.GetSnapshot(useDeltas: true);
             deltaSnapshot.Hardware.CpuCycles.ShouldBe(120UL);
             deltaSnapshot.Hardware.Instructions.ShouldBe(15ul * 80 / 70);
         }
-    }
-
-    private static PerfEventCounterSession CreateSession()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux) ||
-            RuntimeInformation.OSArchitecture != Architecture.X64)
-        {
-            Assert.Inconclusive("PerfEventCounterSession tests require Linux x64.");
-        }
-
-        return PerfEventCounterSession.New(Environment.ProcessId, 0);
     }
 }

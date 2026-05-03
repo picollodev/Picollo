@@ -10,8 +10,10 @@ using static Picollo.PerfEvent.NativeMethods;
 
 namespace Picollo.PerfEvent;
 
-public unsafe class PerfEventCounterSession : IDisposable
+public unsafe partial class PerfEventCounterSession : IDisposable
 {
+    // TODO Enable/Disable/Reset methods
+    
     public int Pid { get; private set; }
     public int Cpu { get; private set; }
 
@@ -47,118 +49,6 @@ public unsafe class PerfEventCounterSession : IDisposable
         Counters = new PerfEventKnownCounters(_counters);
     }
 
-    public static PerfEventCounterSession New(int osThreadId = -1, int cpu = -1)
-    {
-        if (!OperatingSystem.IsLinux())
-            throw new PlatformNotSupportedException("perf_event_open counters are supported only on Linux.");
-
-        if (osThreadId < 0) osThreadId = -1;
-        if (cpu < 0) cpu = -1;
-
-        if (osThreadId == -1 && cpu == -1)
-            throw new InvalidOperationException("Either osThreadId or cpu must be set to non-negative value");
-
-        return new PerfEventCounterSession(osThreadId, cpu);
-    }
-
-    public PerfEventCounterSession WithPinned(bool pinned = true)
-    {
-        EnsureNotOpened();
-        _pinned = pinned;
-        return this;
-    }
-
-    public PerfEventCounterSession WithKernel(bool withKernel = true)
-    {
-        EnsureNotOpened();
-        _withKernel = withKernel;
-        return this;
-    }
-
-    public PerfEventCounterSession WithEnabled(bool enabled = true)
-    {
-        EnsureNotOpened();
-        _enabled = enabled;
-        return this;
-    }
-
-    /// <summary>
-    /// Adds counters for instructions, cycles and reference cycles.
-    /// These counters should always be available and do not consume programmable counter slots. 
-    /// </summary>
-    public PerfEventCounterSession WithFixedCounters()
-    {
-        EnsureNotOpened();
-        AddHardwareCounter(PerfHwId.Instructions);
-        AddHardwareCounter(PerfHwId.CpuCycles);
-        AddHardwareCounter(PerfHwId.RefCpuCycles);
-        return this;
-    }
-
-    public PerfEventCounterSession WithHardwareCounters()
-    {
-        EnsureNotOpened();
-        AddHardwareCounter(PerfHwId.Instructions);
-        AddHardwareCounter(PerfHwId.CpuCycles);
-        AddHardwareCounter(PerfHwId.RefCpuCycles);
-        AddHardwareCounter(PerfHwId.BranchInstructions);
-        AddHardwareCounter(PerfHwId.BranchMisses);
-        AddHardwareCounter(PerfHwId.CacheReferences);
-        AddHardwareCounter(PerfHwId.CacheMisses);
-        return this;
-    }
-
-    public PerfEventCounterSession AddHardwareCounter(PerfHwId counter)
-    {
-        AddHardwareCounter(counter, out _);
-        return this;
-    }
-
-    public PerfEventCounterSession AddHardwareCounter(PerfHwId counter, out PerfEventCounter handle)
-    {
-        handle = AddCounter(PerfTypeId.Hardware, (ulong)counter);
-        return this;
-    }
-
-    public PerfEventCounterSession AddSoftwareCounter(PerfSwIds counter)
-    {
-        AddSoftwareCounter(counter, out _);
-        return this;
-    }
-
-    public PerfEventCounterSession AddSoftwareCounter(PerfSwIds counter, out PerfEventCounter handle)
-    {
-        handle = AddCounter(PerfTypeId.Software, (ulong)counter);
-        return this;
-    }
-
-    public PerfEventCounterSession AddCacheCounter(PerfCacheId counter)
-    {
-        AddCacheCounter(counter, out _);
-        return this;
-    }
-
-    public PerfEventCounterSession AddCacheCounter(PerfCacheId counter, out PerfEventCounter handle)
-    {
-        handle = AddCounter(PerfTypeId.HardwareCache, (ulong)counter);
-        return this;
-    }
-
-    private PerfEventCounterSession AddTracepointCounter(uint tracepointId)
-    {
-        throw new NotImplementedException($"{nameof(PerfTypeId.Tracepoint)} counters are not implemented yet.");
-    }
-
-    private PerfEventCounterSession AddRawCounter(ulong rawConfig)
-    {
-        throw new NotImplementedException($"{nameof(PerfTypeId.Raw)} counters are not implemented yet.");
-    }
-
-    private PerfEventCounterSession AddBreakpointCounter(ulong bpType, ulong address, ulong length)
-    {
-        throw new NotImplementedException($"{nameof(PerfTypeId.Breakpoint)} counters are not implemented yet.");
-    }
-
     private PerfEventCounter AddCounter(PerfTypeId type, ulong config)
     {
         EnsureNotOpened();
@@ -172,7 +62,7 @@ public unsafe class PerfEventCounterSession : IDisposable
         return counter;
     }
 
-    public PerfEventCounterSession Open()
+    private void Open()
     {
         EnsureNotOpened();
 
@@ -203,7 +93,6 @@ public unsafe class PerfEventCounterSession : IDisposable
         Cpu = originalCpu;
         _state = 1;
         DoOpen();
-        return this;
     }
 
     private void DoOpen()

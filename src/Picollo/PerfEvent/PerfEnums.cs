@@ -14,7 +14,7 @@ public enum PerfTypeId : uint
     Breakpoint = 5
 }
 
-public enum PerfHwId : ulong
+public enum PerfHardwareCounterId : ulong
 {
     /// <summary>
     /// Total cycles.  Be wary of what happens during CPU frequency scaling.
@@ -71,7 +71,7 @@ public enum PerfHwId : ulong
     RefCpuCycles = 9
 }
 
-public enum PerfSwIds : ulong
+public enum PerfSoftwareCounterId : ulong
 {
     /// <summary>
     /// This reports the CPU clock, a high-resolution per-CPU timer.
@@ -168,7 +168,7 @@ internal enum PerfHwCacheOpResultId : ulong
 }
 
 [SuppressMessage("ReSharper", "ShiftExpressionZeroLeftOperand")]
-public enum PerfCacheId : ulong
+public enum PerfCacheCounterId : ulong
 {
     L1DReadAccess = PerfHwCacheId.L1D | (PerfHwCacheOpId.Read << 8) | (PerfHwCacheOpResultId.Access << 16),
     L1DReadMiss = PerfHwCacheId.L1D | (PerfHwCacheOpId.Read << 8) | (PerfHwCacheOpResultId.Miss << 16),

@@ -83,15 +83,15 @@ public class PerfEventCounter
         switch (type)
         {
             case PerfTypeId.Hardware:
-                subName = $"{((PerfHwId)config):G}";
+                subName = $"{((PerfHardwareCounterId)config):G}";
                 break;
             case PerfTypeId.Software:
-                subName = $"{((PerfSwIds)config):G}";
+                subName = $"{((PerfSoftwareCounterId)config):G}";
                 break;
             case PerfTypeId.Tracepoint:
                 break;
             case PerfTypeId.HardwareCache:
-                subName = $"{((PerfCacheId)config):G}";
+                subName = $"{((PerfCacheCounterId)config):G}";
                 break;
             case PerfTypeId.Raw:
                 break;

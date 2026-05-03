@@ -10,26 +10,25 @@ var pinned = Picollo.CpuUtils.PrepareBenchmarkThread(8);
 Console.WriteLine($"Pinned: {pinned}");
 
 var tid = CpuUtils.GetOsThreadId();
-
+var x = new PerfEventCounterSession.Factory();
 using var perfSession = PerfEventCounterSession
-    .New((int)tid)
+    .For((int)tid, -1)
     .WithPinned(true)
     .WithEnabled(true)
     .WithHardwareCounters()
-    // .AddHardwareCounter(PerfHwId.CpuCycles)
-    // .AddHardwareCounter(PerfHwId.Instructions)
-    // .AddHardwareCounter(PerfHwId.RefCpuCycles)
-    // .AddHardwareCounter(PerfHwId.BranchMisses)
-    // .AddSoftwareCounter(PerfSwIds.CpuClock)
-    // .AddSoftwareCounter(PerfSwIds.PageFaults)
-    // .AddSoftwareCounter(PerfSwIds.CpuMigrations)
-    // .AddSoftwareCounter(PerfSwIds.Dummy)
+    // .WithHardwareCounters(PerfHwId.CpuCycles)
+    // .WithHardwareCounters(PerfHwId.Instructions)
+    // .WithHardwareCounters(PerfHwId.RefCpuCycles)
+    // .WithHardwareCounters(PerfHwId.BranchMisses)
+    // .WithHardwareCounters(PerfSwIds.CpuClock)
+    // .WithHardwareCounters(PerfSwIds.PageFaults)
+    // .WithHardwareCounters(PerfSwIds.CpuMigrations)
+    // .WithHardwareCounters(PerfSwIds.Dummy)
+    .Create();
 
-    .Open();
- 
+
 // perfSession.GetSnapshot();
 
-// perfSession.Start();
 
 Console.WriteLine($"IsAvailable: {PerfHelpers.IsAvailable()}");
 

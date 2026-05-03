@@ -109,36 +109,36 @@ public sealed class PerfEventKnownCounters : IReadOnlyList<PerfEventCounter>
 
     private void SetHardwareCounter(PerfEventCounter counter)
     {
-        switch ((PerfHwId)counter.Config)
+        switch ((PerfHardwareCounterId)counter.Config)
         {
-            case PerfHwId.CpuCycles:
+            case PerfHardwareCounterId.CpuCycles:
                 _hardware.CpuCycles = counter;
                 break;
-            case PerfHwId.Instructions:
+            case PerfHardwareCounterId.Instructions:
                 _hardware.Instructions = counter;
                 break;
-            case PerfHwId.CacheReferences:
+            case PerfHardwareCounterId.CacheReferences:
                 _hardware.CacheReferences = counter;
                 break;
-            case PerfHwId.CacheMisses:
+            case PerfHardwareCounterId.CacheMisses:
                 _hardware.CacheMisses = counter;
                 break;
-            case PerfHwId.BranchInstructions:
+            case PerfHardwareCounterId.BranchInstructions:
                 _hardware.BranchInstructions = counter;
                 break;
-            case PerfHwId.BranchMisses:
+            case PerfHardwareCounterId.BranchMisses:
                 _hardware.BranchMisses = counter;
                 break;
-            case PerfHwId.BusCycles:
+            case PerfHardwareCounterId.BusCycles:
                 _hardware.BusCycles = counter;
                 break;
-            case PerfHwId.StalledCyclesFrontend:
+            case PerfHardwareCounterId.StalledCyclesFrontend:
                 _hardware.StalledCyclesFrontend = counter;
                 break;
-            case PerfHwId.StalledCyclesBackend:
+            case PerfHardwareCounterId.StalledCyclesBackend:
                 _hardware.StalledCyclesBackend = counter;
                 break;
-            case PerfHwId.RefCpuCycles:
+            case PerfHardwareCounterId.RefCpuCycles:
                 _hardware.RefCpuCycles = counter;
                 break;
         }
@@ -146,42 +146,42 @@ public sealed class PerfEventKnownCounters : IReadOnlyList<PerfEventCounter>
 
     private void SetSoftwareCounter(PerfEventCounter counter)
     {
-        switch ((PerfSwIds)counter.Config)
+        switch ((PerfSoftwareCounterId)counter.Config)
         {
-            case PerfSwIds.CpuClock:
+            case PerfSoftwareCounterId.CpuClock:
                 _software.CpuClock = counter;
                 break;
-            case PerfSwIds.TaskClock:
+            case PerfSoftwareCounterId.TaskClock:
                 _software.TaskClock = counter;
                 break;
-            case PerfSwIds.PageFaults:
+            case PerfSoftwareCounterId.PageFaults:
                 _software.PageFaults = counter;
                 break;
-            case PerfSwIds.ContextSwitches:
+            case PerfSoftwareCounterId.ContextSwitches:
                 _software.ContextSwitches = counter;
                 break;
-            case PerfSwIds.CpuMigrations:
+            case PerfSoftwareCounterId.CpuMigrations:
                 _software.CpuMigrations = counter;
                 break;
-            case PerfSwIds.PageFaultsMin:
+            case PerfSoftwareCounterId.PageFaultsMin:
                 _software.PageFaultsMin = counter;
                 break;
-            case PerfSwIds.PageFaultsMaj:
+            case PerfSoftwareCounterId.PageFaultsMaj:
                 _software.PageFaultsMaj = counter;
                 break;
-            case PerfSwIds.AlignmentFaults:
+            case PerfSoftwareCounterId.AlignmentFaults:
                 _software.AlignmentFaults = counter;
                 break;
-            case PerfSwIds.EmulationFaults:
+            case PerfSoftwareCounterId.EmulationFaults:
                 _software.EmulationFaults = counter;
                 break;
-            case PerfSwIds.Dummy:
+            case PerfSoftwareCounterId.Dummy:
                 _software.Dummy = counter;
                 break;
-            case PerfSwIds.BpfOutput:
+            case PerfSoftwareCounterId.BpfOutput:
                 _software.BpfOutput = counter;
                 break;
-            case PerfSwIds.CgroupSwitches:
+            case PerfSoftwareCounterId.CgroupSwitches:
                 _software.CgroupSwitches = counter;
                 break;
         }
@@ -189,42 +189,42 @@ public sealed class PerfEventKnownCounters : IReadOnlyList<PerfEventCounter>
 
     private void SetCacheCounter(PerfEventCounter counter)
     {
-        switch ((PerfCacheId)counter.Config)
+        switch ((PerfCacheCounterId)counter.Config)
         {
-            case PerfCacheId.L1DReadAccess:
+            case PerfCacheCounterId.L1DReadAccess:
                 _caches.L1DReadAccess = counter;
                 break;
-            case PerfCacheId.L1DReadMiss:
+            case PerfCacheCounterId.L1DReadMiss:
                 _caches.L1DReadMiss = counter;
                 break;
-            case PerfCacheId.L1DWriteAccess:
+            case PerfCacheCounterId.L1DWriteAccess:
                 _caches.L1DWriteAccess = counter;
                 break;
-            case PerfCacheId.L1DWriteMiss:
+            case PerfCacheCounterId.L1DWriteMiss:
                 _caches.L1DWriteMiss = counter;
                 break;
-            case PerfCacheId.L1IReadAccess:
+            case PerfCacheCounterId.L1IReadAccess:
                 _caches.L1IReadAccess = counter;
                 break;
-            case PerfCacheId.L1IReadMiss:
+            case PerfCacheCounterId.L1IReadMiss:
                 _caches.L1IReadMiss = counter;
                 break;
-            case PerfCacheId.L1IWriteAccess:
+            case PerfCacheCounterId.L1IWriteAccess:
                 _caches.L1IWriteAccess = counter;
                 break;
-            case PerfCacheId.L1IWriteMiss:
+            case PerfCacheCounterId.L1IWriteMiss:
                 _caches.L1IWriteMiss = counter;
                 break;
-            case PerfCacheId.LLReadAccess:
+            case PerfCacheCounterId.LLReadAccess:
                 _caches.LLReadAccess = counter;
                 break;
-            case PerfCacheId.LLReadMiss:
+            case PerfCacheCounterId.LLReadMiss:
                 _caches.LLReadMiss = counter;
                 break;
-            case PerfCacheId.LLWriteAccess:
+            case PerfCacheCounterId.LLWriteAccess:
                 _caches.LLWriteAccess = counter;
                 break;
-            case PerfCacheId.LLWriteMiss:
+            case PerfCacheCounterId.LLWriteMiss:
                 _caches.LLWriteMiss = counter;
                 break;
         }
