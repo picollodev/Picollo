@@ -12,8 +12,8 @@ namespace Picollo.PerfEvent;
 
 public unsafe class PerfEventCounterSession : IDisposable
 {
-    public int Pid { get; }
-    public int Cpu { get; }
+    public int Pid { get; private set; }
+    public int Cpu { get; private set; }
 
     public bool HasUserRdpmc { get; private set; }
     public bool HasUserTime { get; private set; }
@@ -94,7 +94,7 @@ public unsafe class PerfEventCounterSession : IDisposable
         AddHardwareCounter(PerfHwId.RefCpuCycles);
         return this;
     }
-    
+
     public PerfEventCounterSession WithHardwareCounters()
     {
         EnsureNotOpened();
@@ -180,6 +180,34 @@ public unsafe class PerfEventCounterSession : IDisposable
             throw new InvalidOperationException("No counters were added");
 
         _state = 1;
+        var originalPid = Pid;
+        var originalCpu = Cpu;
+        Pid = 0;
+        Cpu = -1;
+
+        try
+        {
+            DoOpen();
+            CalibrateOverhead();
+        }
+        catch
+        {
+            //
+        }
+        finally
+        {
+            DoDispose();
+        }
+
+        Pid = originalPid;
+        Cpu = originalCpu;
+        _state = 1;
+        DoOpen();
+        return this;
+    }
+
+    private void DoOpen()
+    {
         try
         {
             _groupLeaderFd = -1;
@@ -235,7 +263,8 @@ public unsafe class PerfEventCounterSession : IDisposable
             CounterValuesPtr = (PerfEventCounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_counterValues));
 
             _previousCounterValues = GC.AllocateArray<PerfEventCounterValue>(_counters.Count, true);
-            PreviousCounterValuesPtr = (PerfEventCounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
+            PreviousCounterValuesPtr =
+                (PerfEventCounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
 
             _groupReader = new GroupReader(_groupLeaderFd, _counterIds.Length);
 
@@ -248,8 +277,6 @@ public unsafe class PerfEventCounterSession : IDisposable
             if (HasUserRdpmc)
                 ReadFast();
 
-            CalibrateOverhead();
-
             ResetGroup(_groupLeaderFd);
             Read();
         }
@@ -258,8 +285,6 @@ public unsafe class PerfEventCounterSession : IDisposable
             Dispose();
             throw;
         }
-
-        return this;
     }
 
     private void CalibrateOverhead()
@@ -276,16 +301,16 @@ public unsafe class PerfEventCounterSession : IDisposable
         {
             Read();
             Read();
-            
+
             // TODO Use histograms
-            
+
             foreach (PerfEventCounter counter in _counters)
             {
                 var pairOverhead = counter.RawDelta.Value;
                 counter.PairReadOverheadList.Add(pairOverhead);
-                if ((i == 0 || pairOverhead > counter.PairReadOverhead.Value && pairOverhead > 0))
+                if ((i == 0 || pairOverhead > counter.PairReadOverhead && pairOverhead > 0))
                 {
-                    counter.PairReadOverhead = new PerfEventCounterValue { Value = pairOverhead };
+                    counter.PairReadOverhead = pairOverhead;
                     // Console.WriteLine($"----> Set overhead for counter {counter.Name} to: {pairOverhead}");
                 }
 
@@ -296,8 +321,8 @@ public unsafe class PerfEventCounterSession : IDisposable
         foreach (PerfEventCounter counter in _counters)
         {
             counter.PairReadOverheadList.Sort();
-            counter.PairReadOverhead = new PerfEventCounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10] };
-            Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead.Value}");
+            counter.PairReadOverhead = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10];
+            Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead}");
         }
     }
 
