@@ -10,6 +10,7 @@
     <File Path="LICENSE.txt" />
     <File Path="Readme.md" />
     <File Path="src/Directory.Build.props" />
+    <File Path="src/Directory.Build.targets" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="src/Picollo.Cli.Tests/Picollo.Cli.Tests.csproj" />
