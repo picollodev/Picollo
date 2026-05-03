@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 
-using Picollo.PerfEvent;
-
-namespace Picollo;
+namespace Picollo.PerfEvent;
 
 public class PerfEventCounter
 {
@@ -29,19 +27,19 @@ public class PerfEventCounter
     }
 
     internal List<ulong> PairReadOverheadList = new List<ulong>(PerfEventCounterSession.OverheadCalibrationIterations);
-    internal CounterValue PairReadOverhead;
+    internal PerfEventCounterValue PairReadOverhead;
 
-    public unsafe CounterValue Current => Session.CounterValuesPtr[Index];
+    public unsafe PerfEventCounterValue Current => Session.CounterValuesPtr[Index];
 
-    internal unsafe CounterValue RawDelta => Session.CounterValuesPtr[Index] - Session.PreviousCounterValuesPtr[Index];
+    internal unsafe PerfEventCounterValue RawDelta => Session.CounterValuesPtr[Index] - Session.PreviousCounterValuesPtr[Index];
 
-    public CounterValue Delta
+    public PerfEventCounterValue Delta
     {
         get
         {
             var rawDelta = RawDelta;
             if (rawDelta.Value < PairReadOverhead.Value)
-                return new CounterValue { Value = 0, TimeEnabled = rawDelta.TimeEnabled, TimeRunning = rawDelta.TimeRunning };
+                return new PerfEventCounterValue { Value = 0, TimeEnabled = rawDelta.TimeEnabled, TimeRunning = rawDelta.TimeRunning };
 
             return rawDelta - PairReadOverhead;
         }

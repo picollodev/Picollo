@@ -1,8 +1,9 @@
 <Project>
   <PropertyGroup>
-    <Version>0.0.2-alpha</Version>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>1.0.0.0</FileVersion>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">0.0.0-local</PackageVersion>
+    <InformationalVersion>$(PackageVersion)</InformationalVersion>
     <Authors>Victor Baybekov</Authors>
     <Copyright>Copyright (c) 2026 Victor Baybekov (@buybackoff)</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

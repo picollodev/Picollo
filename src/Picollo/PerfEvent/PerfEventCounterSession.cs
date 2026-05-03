@@ -1,18 +1,14 @@
 ﻿using System;
-using System.Buffers;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-using Picollo.PerfEvent;
-
 using static Picollo.PerfEvent.NativeMethods;
 
-namespace Picollo;
+namespace Picollo.PerfEvent;
 
 public unsafe class PerfEventCounterSession : IDisposable
 {
@@ -36,11 +32,11 @@ public unsafe class PerfEventCounterSession : IDisposable
     private nint[] _counterMmaps = null!;
     private nint* _counterMmapsPtr = null!;
     private ulong[] _counterIds = null!;
-    private CounterValue[] _counterValues = null!;
-    internal CounterValue* CounterValuesPtr = null!;
-    private CounterValue[] _previousCounterValues = null!;
-    internal CounterValue* PreviousCounterValuesPtr = null!;
-    private GroupReader _groupReader;
+    private PerfEventCounterValue[] _counterValues = null!;
+    internal PerfEventCounterValue* CounterValuesPtr = null!;
+    private PerfEventCounterValue[] _previousCounterValues = null!;
+    internal PerfEventCounterValue* PreviousCounterValuesPtr = null!;
+    private GroupReader _groupReader = null!;
 
     public PerfEventKnownCounters Counters { get; }
 
@@ -235,11 +231,11 @@ public unsafe class PerfEventCounterSession : IDisposable
                 _counterIds[i] = _counters[i].Id;
             }
 
-            _counterValues = GC.AllocateArray<CounterValue>(_counters.Count, true);
-            CounterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_counterValues));
+            _counterValues = GC.AllocateArray<PerfEventCounterValue>(_counters.Count, true);
+            CounterValuesPtr = (PerfEventCounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_counterValues));
 
-            _previousCounterValues = GC.AllocateArray<CounterValue>(_counters.Count, true);
-            PreviousCounterValuesPtr = (CounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
+            _previousCounterValues = GC.AllocateArray<PerfEventCounterValue>(_counters.Count, true);
+            PreviousCounterValuesPtr = (PerfEventCounterValue*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_previousCounterValues));
 
             _groupReader = new GroupReader(_groupLeaderFd, _counterIds.Length);
 
@@ -289,7 +285,7 @@ public unsafe class PerfEventCounterSession : IDisposable
                 counter.PairReadOverheadList.Add(pairOverhead);
                 if ((i == 0 || pairOverhead > counter.PairReadOverhead.Value && pairOverhead > 0))
                 {
-                    counter.PairReadOverhead = new CounterValue { Value = pairOverhead };
+                    counter.PairReadOverhead = new PerfEventCounterValue { Value = pairOverhead };
                     // Console.WriteLine($"----> Set overhead for counter {counter.Name} to: {pairOverhead}");
                 }
 
@@ -300,7 +296,7 @@ public unsafe class PerfEventCounterSession : IDisposable
         foreach (PerfEventCounter counter in _counters)
         {
             counter.PairReadOverheadList.Sort();
-            counter.PairReadOverhead = new CounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10] };
+            counter.PairReadOverhead = new PerfEventCounterValue { Value = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10] };
             Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead.Value}");
         }
     }

@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/Sln/">
     <Project Path="src/Picollo.Cli/Picollo.Cli.csproj" />
-    <Project Path="src/Picollo.PerfEvent/Picollo.PerfEvent.csproj" />
     <Project Path="src/Picollo/Picollo.csproj" />
   </Folder>
   <Folder Name="/Sln/Misc/">
@@ -14,7 +13,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="src/Picollo.Cli.Tests/Picollo.Cli.Tests.csproj" />
-    <Project Path="src/Picollo.PerfEvent.Tests/Picollo.PerfEvent.Tests.csproj" />
     <Project Path="src/Picollo.Runner/Picollo.Runner.csproj" />
     <Project Path="src/Picollo.Tests/Picollo.Tests.csproj" />
   </Folder>

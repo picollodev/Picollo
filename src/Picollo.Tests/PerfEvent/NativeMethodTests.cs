@@ -1,10 +1,12 @@
-﻿using System;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
+
+using NUnit.Framework;
+
+using Picollo.PerfEvent;
+
 using Shouldly;
 
-namespace Picollo.PerfEvent.Tests;
+namespace Picollo.Tests.PerfEvent;
 
 [TestFixture]
 public class NativeMethodTests

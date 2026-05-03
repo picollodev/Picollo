@@ -1,9 +1,9 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Picollo;
+namespace Picollo.PerfEvent;
 
 [StructLayout(LayoutKind.Sequential)]
-public struct CounterValue
+public struct PerfEventCounterValue
 {
     public ulong Value;
     public ulong TimeEnabled;
@@ -22,17 +22,17 @@ public struct CounterValue
         return (ulong)((double)value * timeEnabled / timeRunning);
     }
 
-    public static CounterValue operator +(CounterValue left, CounterValue right)
-        => new CounterValue
+    public static PerfEventCounterValue operator +(PerfEventCounterValue left, PerfEventCounterValue right)
+        => new PerfEventCounterValue
         {
             Value = left.Value + right.Value,
             TimeEnabled = left.TimeEnabled + right.TimeEnabled,
             TimeRunning = left.TimeRunning + right.TimeRunning
         };
 
-    public static CounterValue operator -(CounterValue left, CounterValue right)
+    public static PerfEventCounterValue operator -(PerfEventCounterValue left, PerfEventCounterValue right)
     {
-        return new CounterValue
+        return new PerfEventCounterValue
         {
             Value = left.Value - right.Value,
             TimeEnabled = left.TimeEnabled - right.TimeEnabled,

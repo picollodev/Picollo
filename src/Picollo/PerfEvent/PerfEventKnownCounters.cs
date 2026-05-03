@@ -2,9 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 
-using Picollo.PerfEvent;
-
-namespace Picollo;
+namespace Picollo.PerfEvent;
 
 public sealed class PerfEventKnownCounters : IReadOnlyList<PerfEventCounter>
 {

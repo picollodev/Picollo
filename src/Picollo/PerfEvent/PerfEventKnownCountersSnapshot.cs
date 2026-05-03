@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Text;
 
-namespace Picollo;
+namespace Picollo.PerfEvent;
 
 public class PerfEventKnownCountersSnapshot
 {
@@ -235,7 +235,7 @@ public class PerfEventKnownCountersSnapshot
         }
     }
 
-    private static ulong? GetValue(global::Picollo.PerfEventCounter? counter, bool useDeltas)
+    private static ulong? GetValue(global::Picollo.PerfEvent.PerfEventCounter? counter, bool useDeltas)
     {
         if (counter == null)
             return null;

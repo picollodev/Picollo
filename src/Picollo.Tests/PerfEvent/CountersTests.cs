@@ -2,9 +2,13 @@ using System;
 using System.Linq;
 using System.Runtime.InteropServices;
 
+using NUnit.Framework;
+
+using Picollo.PerfEvent;
+
 using Shouldly;
 
-namespace Picollo.PerfEvent.Tests;
+namespace Picollo.Tests.PerfEvent;
 
 [TestFixture]
 public class CountersTests
@@ -54,17 +58,17 @@ public class CountersTests
 
         var current = new[]
         {
-            new CounterValue { Value = 100, TimeEnabled = 100, TimeRunning = 50 },
-            new CounterValue { Value = 20, TimeEnabled = 100, TimeRunning = 80 }
+            new PerfEventCounterValue { Value = 100, TimeEnabled = 100, TimeRunning = 50 },
+            new PerfEventCounterValue { Value = 20, TimeEnabled = 100, TimeRunning = 80 }
         };
         var previous = new[]
         {
-            new CounterValue { Value = 40, TimeEnabled = 10, TimeRunning = 5 },
-            new CounterValue { Value = 5, TimeEnabled = 20, TimeRunning = 10 }
+            new PerfEventCounterValue { Value = 40, TimeEnabled = 10, TimeRunning = 5 },
+            new PerfEventCounterValue { Value = 5, TimeEnabled = 20, TimeRunning = 10 }
         };
 
-        fixed (CounterValue* currentPtr = current)
-        fixed (CounterValue* previousPtr = previous)
+        fixed (PerfEventCounterValue* currentPtr = current)
+        fixed (PerfEventCounterValue* previousPtr = previous)
         {
             session.CounterValuesPtr = currentPtr;
             session.PreviousCounterValuesPtr = previousPtr;

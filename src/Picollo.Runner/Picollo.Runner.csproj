@@ -9,7 +9,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Picollo.PerfEvent\Picollo.PerfEvent.csproj" />
       <ProjectReference Include="..\Picollo\Picollo.csproj" />
     </ItemGroup>
 
