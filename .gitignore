@@ -486,3 +486,4 @@ $RECYCLE.BIN/
 *.dll
 *.so
 *.dylib
+.codex
