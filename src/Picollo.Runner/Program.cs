@@ -10,7 +10,6 @@ var pinned = Picollo.CpuUtils.PrepareBenchmarkThread(8);
 Console.WriteLine($"Pinned: {pinned}");
 
 var tid = CpuUtils.GetOsThreadId();
-var x = new PerfEventCounterSession.Factory();
 using var perfSession = PerfEventCounterSession
     .For((int)tid, -1)
     .WithPinned(true)

@@ -52,8 +52,7 @@ public partial class PerfEventCounterSession
         {
             var session = Session;
             session.Open();
-            session = null;
-            return session!;
+            return session;
         }
 
         public Factory WithPinned(bool pinned = true)
