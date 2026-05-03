@@ -1,9 +1,8 @@
-# Picollo: Performance Instrumentation and Continuous Observation for Latency and Low-level Optimizations
+# Picollo: Performance Instrumentation and Continuous Observation for Low-Level Optimizations
 
 Tools for serious performance work in .NET
 
 Project:
 
-* Picollo - runtime utils
-* Picollo.PerfEvent - perf_event API
-* Picollo.Cli - a CLI `picollo` tool to run benchmarks/profiling/tracing
+* Picollo - runtime instrumentation utils, fast HDR histogram, perf_event API
+* Picollo.Cli - a CLI `picollo` tool to run performance measurement sessions: benchmarks/profiling/tracing

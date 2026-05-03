@@ -24,6 +24,4 @@ public class NativeMethodTests
         
         NativeMethods.IsSupported().ShouldBe(expected);
     }
-
-    
 }

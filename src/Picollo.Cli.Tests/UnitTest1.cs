@@ -1,6 +1,6 @@
 ﻿namespace Picollo.Cli.Tests;
 
-public class Tests
+public class CliTests
 {
     [SetUp]
     public void Setup()
