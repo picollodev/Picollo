@@ -1,19 +1,20 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 
 using static Picollo.PerfEvent.NativeMethods;
 
 namespace Picollo.PerfEvent;
 
+[DebuggerDisplay("{ToString(),nq}")]
 public unsafe partial class PerfEventCounterSession : IDisposable
 {
-    // TODO Enable/Disable/Reset methods
-    
     public int Pid { get; private set; }
     public int Cpu { get; private set; }
 
@@ -41,6 +42,55 @@ public unsafe partial class PerfEventCounterSession : IDisposable
     private GroupReader _groupReader = null!;
 
     public PerfEventKnownCounters Counters { get; }
+
+    public void Enable()
+    {
+        EnsureOpened();
+        EnableGroup(_groupLeaderFd);
+        _enabled = true;
+    }
+
+    public void Disable()
+    {
+        EnsureOpened();
+        DisableGroup(_groupLeaderFd);
+        _enabled = false;
+    }
+
+    public void Reset()
+    {
+        EnsureOpened();
+        ResetGroup(_groupLeaderFd);
+
+        if (HasUserRdpmc)
+            ReadFast();
+        else
+            ReadSlow();
+
+        var current = CounterValuesPtr;
+        var previous = PreviousCounterValuesPtr;
+        for (int i = 0; i < _counters.Count; i++)
+            previous[i] = current[i];
+    }
+
+    public override string ToString()
+    {
+        var sb = new StringBuilder();
+        sb.Append("Pid=").Append(Pid)
+            .Append(", Cpu=").Append(Cpu)
+            .Append(", Kernel=").Append(_withKernel ? 1 : 0)
+            .Append(", Counters: ");
+
+        if (_counters.Count > 0)
+        {
+            sb.Append(_counters[0].Name);
+
+            for (int i = 1; i < _counters.Count; i++)
+                sb.Append(", ").Append(_counters[i].Name);
+        }
+
+        return sb.ToString();
+    }
 
     private PerfEventCounterSession(int osThreadId, int cpu)
     {
