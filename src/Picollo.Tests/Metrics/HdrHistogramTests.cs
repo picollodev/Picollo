@@ -43,5 +43,22 @@ public class HdrHistogramTests
         h.GetRef((ulong)h.BucketSize * 4 + 1).ShouldBe(123u);
     }
 
-    
+    [Test]
+    public void GetPercentile()
+    {
+        var h = new HdrHistogram<uint>(0.01);
+        h.Increment(1);
+        h.Increment(2);
+        h.Increment(3);
+        h.Increment(4);
+        h.Increment(5);
+        // h.GetValueAtPercentile(0).ShouldBe(1ul);
+        // h.GetValueAtPercentile(10).ShouldBe(1ul);
+        // h.GetValueAtPercentile(20).ShouldBe(1ul);
+        // h.GetValueAtPercentile(40).ShouldBe(2ul);
+        h.GetValueAtPercentile(79).ShouldBe(3ul);
+        // h.GetValueAtPercentile(80).ShouldBe(4ul);
+        // h.GetValueAtPercentile(81).ShouldBe(4ul);
+        // h.GetValueAtPercentile(100).ShouldBe(5ul);
+    }
 }

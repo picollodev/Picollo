@@ -23,7 +23,7 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
     private ulong _min = ulong.MaxValue;
     private ulong _max;
     private ulong _totalCount;
-    private T _overflowCounter;
+    private T _overflowCount;
     public ulong MaxTrackableValue { get; }
 
     internal HdrHistogram(double relativeError = 0.001, ulong maxTrackableValue = ulong.MaxValue)
@@ -110,8 +110,86 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
     {
         var index = _buckets.GetIndex(value);
         if (index >= (nuint)_data.LongCount)
-            return ref _overflowCounter;
+            return ref _overflowCount;
         return ref _data.GetAtUnsafe(index);
+    }
+
+    private static ulong TtoUlong(T value)
+    {
+        ulong longValue;
+        if (typeof(T) == typeof(uint))
+            longValue = (uint)(object)value;
+        else if (typeof(T) == typeof(ulong))
+            longValue = (ulong)(object)(T)value;
+        else if (typeof(T) == typeof(UInt128))
+            longValue = checked((ulong)(UInt128)(object)(T)value);
+        else
+            throw new NotSupportedException("Supported storage types are only uint, ulong and UInt128");
+
+        return longValue;
+    }
+
+    public ulong GetValueAtPercentile(double percentile)
+    {
+        // _totalCount may include overflow
+        var overflowCount = TtoUlong(_overflowCount);
+        var trackedTotal = _totalCount - overflowCount;
+        if (trackedTotal == 0)
+            return 0;
+
+        if (percentile <= 0)
+            return _min;
+
+        if (percentile >= 100 && overflowCount == 0)
+            return _max;
+
+        if (percentile > 100)
+            percentile = 100;
+
+        var target = trackedTotal * (percentile * 0.01);
+        if (!(target > 0))
+            return _min;
+
+        // If no values recorded, this is the last slot with zero
+        var firstIndex = _buckets.GetIndex(_min);
+        
+        // Last index is not known ahead of time, _max can be checked to MaxTrackedValue,
+        // but that is not needed as we keep track the running total and must stop when it equals to trackedTotal.
+        // Percentiles must not care about overflow count.
+        
+        ulong runningTotal = 0;
+        for (var index = firstIndex; index < (nuint)_data.LongCount; index++)
+        {
+            var count = TtoUlong(_data.GetAtUnsafe(index));
+            if (count == 0)
+                continue;
+
+            var nextTotal = runningTotal + count;
+            if (target <= nextTotal)
+            {
+                var (start, step) = _buckets.GetBucket(index);
+                if (step != 1)
+                {
+                    var offset = (ulong)(((target - runningTotal) / count) * step);
+                    if (offset >= step)
+                        offset = step - 1;
+
+                    start += offset;
+                }
+
+                if (start < _min)
+                    return _min;
+
+                if (overflowCount == 0 && start > _max)
+                    return _max;
+
+                return start;
+            }
+
+            runningTotal = nextTotal;
+        }
+
+        return overflowCount == 0 ? _max : 0;
     }
 }
 
@@ -145,5 +223,15 @@ internal readonly struct HdrBuckets
         ulong subIndex = (value >> stepScale) & ((1u << BucketScale) - 1);
         var index = (((nuint)(uint)bucketIndex << BucketScale) + (nuint)subIndex);
         return index;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public (ulong Start, ulong Step) GetBucket(nuint index)
+    {
+        var bucketIndex = index >> BucketScale;
+        var stepScale = (int)bucketIndex - (bucketIndex != 0 ? 1 : 0);
+        var subIndex = (ulong)(index & (nuint)((1u << BucketScale) - 1));
+        var start = (((bucketIndex != 0 ? 1UL << BucketScale : 0UL) + subIndex) << stepScale);
+        return (start, 1UL << stepScale);
     }
 }
