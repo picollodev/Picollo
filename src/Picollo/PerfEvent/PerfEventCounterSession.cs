@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
-
 using static Picollo.PerfEvent.NativeMethods;
 
 namespace Picollo.PerfEvent;
@@ -16,7 +15,7 @@ namespace Picollo.PerfEvent;
 public unsafe partial class PerfEventCounterSession : IDisposable
 {
     public int Pid { get; private set; }
-    public int Cpu { get; private set; }
+    public int Cpu { get; private set; } = -1;
 
     public bool HasUserRdpmc { get; private set; }
     public bool HasUserTime { get; private set; }
@@ -43,59 +42,8 @@ public unsafe partial class PerfEventCounterSession : IDisposable
 
     public PerfEventKnownCounters Counters { get; }
 
-    public void Enable()
+    private PerfEventCounterSession()
     {
-        EnsureOpened();
-        EnableGroup(_groupLeaderFd);
-        _enabled = true;
-    }
-
-    public void Disable()
-    {
-        EnsureOpened();
-        DisableGroup(_groupLeaderFd);
-        _enabled = false;
-    }
-
-    public void Reset()
-    {
-        EnsureOpened();
-        ResetGroup(_groupLeaderFd);
-
-        if (HasUserRdpmc)
-            ReadFast();
-        else
-            ReadSlow();
-
-        var current = CounterValuesPtr;
-        var previous = PreviousCounterValuesPtr;
-        for (int i = 0; i < _counters.Count; i++)
-            previous[i] = current[i];
-    }
-
-    public override string ToString()
-    {
-        var sb = new StringBuilder();
-        sb.Append("Pid=").Append(Pid)
-            .Append(", Cpu=").Append(Cpu)
-            .Append(", Kernel=").Append(_withKernel ? 1 : 0)
-            .Append(", Counters: ");
-
-        if (_counters.Count > 0)
-        {
-            sb.Append(_counters[0].Name);
-
-            for (int i = 1; i < _counters.Count; i++)
-                sb.Append(", ").Append(_counters[i].Name);
-        }
-
-        return sb.ToString();
-    }
-
-    private PerfEventCounterSession(int osThreadId, int cpu)
-    {
-        Pid = osThreadId;
-        Cpu = cpu;
         Counters = new PerfEventKnownCounters(_counters);
     }
 
@@ -114,6 +62,9 @@ public unsafe partial class PerfEventCounterSession : IDisposable
 
     private void Open()
     {
+        if (!OperatingSystem.IsLinux() || RuntimeInformation.OSArchitecture != Architecture.X64)
+            throw new PlatformNotSupportedException("PerfEventCounterSession is supported only on Linux x64.");
+
         EnsureNotOpened();
 
         if (_counters.Count == 0)
@@ -207,17 +158,16 @@ public unsafe partial class PerfEventCounterSession : IDisposable
 
             _groupReader = new GroupReader(_groupLeaderFd, _counterIds.Length);
 
-            if (_enabled)
-                EnableGroup(_groupLeaderFd);
-
             // For pinned we must try to read group and check the result is not EoF. Do that early here.
             ReadSlow();
 
             if (HasUserRdpmc)
                 ReadFast();
 
+            if (!_enabled)
+                DisableGroup(_groupLeaderFd);
+
             ResetGroup(_groupLeaderFd);
-            Read();
         }
         catch
         {
@@ -325,6 +275,55 @@ public unsafe partial class PerfEventCounterSession : IDisposable
             CounterValuesPtr[i].TimeRunning = groupReader.TimeRunning;
             CounterValuesPtr[i].TimeEnabled = groupReader.TimeEnabled;
         }
+    }
+
+    public void Enable()
+    {
+        EnsureOpened();
+        EnableGroup(_groupLeaderFd);
+        _enabled = true;
+    }
+
+    public void Disable()
+    {
+        EnsureOpened();
+        DisableGroup(_groupLeaderFd);
+        _enabled = false;
+    }
+
+    public void Reset()
+    {
+        EnsureOpened();
+        ResetGroup(_groupLeaderFd);
+
+        if (HasUserRdpmc)
+            ReadFast();
+        else
+            ReadSlow();
+
+        var current = CounterValuesPtr;
+        var previous = PreviousCounterValuesPtr;
+        for (int i = 0; i < _counters.Count; i++)
+            previous[i] = current[i];
+    }
+
+    public override string ToString()
+    {
+        var sb = new StringBuilder();
+        sb.Append("Pid=").Append(Pid)
+            .Append(", Cpu=").Append(Cpu)
+            .Append(", Kernel=").Append(_withKernel ? 1 : 0)
+            .Append(", Counters: ");
+
+        if (_counters.Count > 0)
+        {
+            sb.Append(_counters[0].Name);
+
+            for (int i = 1; i < _counters.Count; i++)
+                sb.Append(", ").Append(_counters[i].Name);
+        }
+
+        return sb.ToString();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

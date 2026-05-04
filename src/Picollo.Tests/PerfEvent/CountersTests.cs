@@ -1,11 +1,8 @@
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
-
 using NUnit.Framework;
-
 using Picollo.PerfEvent;
-
 using Shouldly;
 
 namespace Picollo.Tests.PerfEvent;
@@ -26,13 +23,14 @@ public class CountersTests
     [Test]
     public void AddCounterOverloadsPopulateKnownCountersAndEnumerable()
     {
-        var session = 
-            PerfEventCounterSession.Configure(Environment.ProcessId, 0)
-            .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
-            .WithHardwareCounter(PerfHardwareCounterId.Instructions)
-            .WithSoftwareCounter(PerfSoftwareCounterId.ContextSwitches, out var contextSwitches)
-            .WithCacheCounter(PerfCacheCounterId.L1DReadMiss, out var l1dReadMiss)
-            .Session;
+        var session =
+            PerfEventCounterSession.Config
+                .WithTarget(Environment.ProcessId, 0)
+                .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
+                .WithHardwareCounter(PerfHardwareCounterId.Instructions)
+                .WithSoftwareCounter(PerfSoftwareCounterId.ContextSwitches, out var contextSwitches)
+                .WithCacheCounter(PerfCacheCounterId.L1DReadMiss, out var l1dReadMiss)
+                .Session;
 
         session.Counters.Count.ShouldBe(4);
         session.Counters[0].ShouldBeSameAs(cycles);
@@ -46,8 +44,8 @@ public class CountersTests
     [Test]
     public void DuplicateCounterDoesNotOverwriteKnownCounter()
     {
-        var factory = PerfEventCounterSession
-            .Configure(Environment.ProcessId, 0)
+        var factory = PerfEventCounterSession.Config
+            .WithTarget(Environment.ProcessId, 0)
             .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles);
 
         var session = factory.Session;
@@ -61,7 +59,7 @@ public class CountersTests
         {
             //
         }
-        
+
         session.Counters.Hardware.CpuCycles.ShouldBeSameAs(cycles);
         session.Counters.Count.ShouldBe(1);
     }
@@ -69,7 +67,8 @@ public class CountersTests
     [Test]
     public unsafe void SnapshotCanUseCurrentOrDeltaCounterValues()
     {
-        var session = PerfEventCounterSession.Configure(Environment.ProcessId, 0)
+        var session = PerfEventCounterSession.Config
+            .WithTarget(Environment.ProcessId, 0)
             .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
             .WithHardwareCounter(PerfHardwareCounterId.Instructions, out var instructions)
             .Session;

@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-
 using Picollo.Internal;
 
 namespace Picollo.Metrics;
 
-public class HdrHistogram
+public static class HdrHistogram
 {
     /// <summary>
     /// Creates a new HdrHistogram backed by uint64 storage counters, the relative precision of 0.001 (3 significant digits) and maxTrackableValue = ulong.MaxValue.

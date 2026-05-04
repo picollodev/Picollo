@@ -8,10 +8,10 @@ public enum PerfTypeId : uint
 {
     Hardware = 0,
     Software = 1,
-    Tracepoint = 2,
+    // Tracepoint = 2,
     HardwareCache = 3,
     Raw = 4,
-    Breakpoint = 5
+    // Breakpoint = 5
 }
 
 public enum PerfHardwareCounterId : ulong

@@ -13,20 +13,22 @@ public class PerfSessionSamples
         Console.WriteLine($"Pinned: {pinned}");
 
         var tid = CpuUtils.GetOsThreadId();
-        using var perfSession = PerfEventCounterSession
-            .Configure((int)tid, -1)
-            .WithPinned(true)
-            .WithEnabled(true)
-            .WithHardwareCounters()
-            // .WithHardwareCounters(PerfHwId.CpuCycles)
-            // .WithHardwareCounters(PerfHwId.Instructions)
-            // .WithHardwareCounters(PerfHwId.RefCpuCycles)
-            // .WithHardwareCounters(PerfHwId.BranchMisses)
-            // .WithHardwareCounters(PerfSwIds.CpuClock)
-            // .WithHardwareCounters(PerfSwIds.PageFaults)
-            // .WithHardwareCounters(PerfSwIds.CpuMigrations)
-            // .WithHardwareCounters(PerfSwIds.Dummy)
-            .Create();
+        using var perfSession =
+            PerfEventCounterSession.Config
+                .WithTarget((int)tid, -1)
+                .WithPinned(true)
+                .WithKernel(false)
+                .WithEnabled(true)
+                .WithHardwareCounters()
+                // .WithHardwareCounters(PerfHwId.CpuCycles)
+                // .WithHardwareCounters(PerfHwId.Instructions)
+                // .WithHardwareCounters(PerfHwId.RefCpuCycles)
+                // .WithHardwareCounters(PerfHwId.BranchMisses)
+                // .WithHardwareCounters(PerfSwIds.CpuClock)
+                // .WithHardwareCounters(PerfSwIds.PageFaults)
+                // .WithHardwareCounters(PerfSwIds.CpuMigrations)
+                // .WithHardwareCounters(PerfSwIds.Dummy)
+                .Create();
 
 // perfSession.GetSnapshot();
 

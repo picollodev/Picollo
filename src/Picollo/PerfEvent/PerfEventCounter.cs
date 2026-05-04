@@ -88,15 +88,16 @@ public class PerfEventCounter
             case PerfTypeId.Software:
                 subName = $"{((PerfSoftwareCounterId)config):G}";
                 break;
-            case PerfTypeId.Tracepoint:
-                break;
+            // case PerfTypeId.Tracepoint:
+            //     break;
             case PerfTypeId.HardwareCache:
                 subName = $"{((PerfCacheCounterId)config):G}";
                 break;
             case PerfTypeId.Raw:
+                subName = $"{config}";
                 break;
-            case PerfTypeId.Breakpoint:
-                break;
+            // case PerfTypeId.Breakpoint:
+            //     break;
             default:
                 throw new ArgumentOutOfRangeException();
         }
@@ -105,5 +106,6 @@ public class PerfEventCounter
         return name;
     }
 
-    public override string ToString() => $"{Name}: Current={Current.Value:N0}, Delta={Delta.Value:N0} (MUX={Current.TimeRunning != Current.TimeEnabled})";
+    public override string ToString() =>
+        $"{Name}: Current={Current.Value:N0}, Delta={Delta.Value:N0} (MUX={Current.TimeRunning != Current.TimeEnabled})";
 }

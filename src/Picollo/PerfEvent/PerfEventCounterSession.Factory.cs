@@ -6,55 +6,61 @@ namespace Picollo.PerfEvent;
 public partial class PerfEventCounterSession
 {
     /// <summary>
-    /// Create a new session factory, which can be fluently configured and completed with a call to <see cref="Factory.Create"/>.
-    /// <para /> The pid and cpu arguments allow specifying which process and CPU to monitor:
-    /// <br /> <b>pid == 0 and cpu == -1</b>: This measures the calling process/thread on any CPU.
-    /// <br /> <b>pid == 0 and cpu >= 0</b>: This measures the calling process/thread only when running on the specified CPU.
-    /// <br /> <b>pid > 0 and cpu == -1</b>: This measures the specified process/thread on any CPU.
-    /// <br /> <b>pid > 0 and cpu >= 0</b>:  This measures the specified process/thread only when running on the specified CPU.
-    /// <br /> <b>pid == -1 and cpu >= 0</b>:  This measures all processes/threads on the specified CPU.
-    /// This requires CAP_PERFMON (since Linux 5.8) or CAP_SYS_ADMIN capability
-    /// or a `/proc/sys/kernel/perf_event_paranoid` value of less than 1.
-    /// <br /> <b>pid == -1 and cpu == -1</b>: This setting is invalid and will return an error. 
+    /// Returns a new session factory, which can be fluently configured and completed with a call to <see cref="Factory.Create"/>.
     /// </summary>
-    /// <param name="pid">OS thread/process id to monitor</param>
-    /// <param name="cpu">CPU core id to monitor</param>
-    /// <returns>A <see cref="Factory"/> to configure a new session.</returns>
-    /// <exception cref="PlatformNotSupportedException">The platform is not Linux x64</exception>
-    /// <exception cref="InvalidOperationException">Both <paramref name="pid"/> and <paramref name="cpu"/> are negative.</exception>
-    public static Factory Configure(int pid, int cpu)
-    {
-        if (!OperatingSystem.IsLinux() || RuntimeInformation.OSArchitecture != Architecture.X64)
-            throw new PlatformNotSupportedException("PerfEventCounterSession is supported only on Linux x64.");
-
-        if (pid < 0) pid = -1;
-        if (cpu < 0) cpu = -1;
-
-        if (pid == -1 && cpu == -1)
-            throw new InvalidOperationException("Either osThreadId or cpu must be set to non-negative value");
-
-        return new Factory(new PerfEventCounterSession(pid, cpu));
-    }
+    /// <seealso>https://man7.org/linux/man-pages/man2/perf_event_open.2.html</seealso>
+    public static Factory Config => new(new PerfEventCounterSession());
 
     public readonly ref struct Factory
     {
         internal readonly PerfEventCounterSession Session = null!;
 
         public Factory() =>
-            throw new InvalidOperationException($"Cannot use {nameof(PerfEventCounterSession)}.{nameof(Factory)} directly");
+            throw new InvalidOperationException($"Cannot use {nameof(PerfEventCounterSession)}.{nameof(Factory)} directly.");
 
         internal Factory(PerfEventCounterSession session)
         {
             Session = session;
         }
 
-        public PerfEventCounterSession Create()
+        /// <summary>
+        /// <para /> Sets the pid and cpu arguments specifying which process and CPU to monitor:
+        /// <br /> <b>pid == 0 and cpu == -1</b>: This measures the calling process/thread on any CPU.
+        /// <br /> <b>pid == 0 and cpu >= 0</b>: This measures the calling process/thread only when running on the specified CPU.
+        /// <br /> <b>pid > 0 and cpu == -1</b>: This measures the specified process/thread on any CPU.
+        /// <br /> <b>pid > 0 and cpu >= 0</b>:  This measures the specified process/thread only when running on the specified CPU.
+        /// <br /> <b>pid == -1 and cpu >= 0</b>:  This measures all processes/threads on the specified CPU.
+        /// This requires CAP_PERFMON (since Linux 5.8) or CAP_SYS_ADMIN capability
+        /// or a `/proc/sys/kernel/perf_event_paranoid` value of less than 1.
+        /// <br /> <b>pid == -1 and cpu == -1</b>: This setting is invalid and will return an error. 
+        /// </summary>
+        /// <seealso>https://man7.org/linux/man-pages/man2/perf_event_open.2.html</seealso>
+        /// <param name="pid">OS thread/process id to monitor</param>
+        /// <param name="cpu">CPU core id to monitor</param>
+        /// <returns>A <see cref="Factory"/> to configure a new session.</returns>
+        /// <exception cref="PlatformNotSupportedException">The platform is not Linux x64</exception>
+        /// <exception cref="InvalidOperationException">Both <paramref name="pid"/> and <paramref name="cpu"/> are negative.</exception>
+        public Factory WithTarget(int pid, int cpu)
         {
-            var session = Session;
-            session.Open();
-            return session;
+            if (pid < 0) pid = -1;
+            if (cpu < 0) cpu = -1;
+
+            if (pid == -1 && cpu == -1)
+                throw new InvalidOperationException("Either osThreadId or cpu must be set to non-negative value");
+
+            Session.EnsureNotOpened();
+            Session.Pid = pid;
+            Session.Cpu = cpu;
+            return this;
         }
 
+        /// <summary>
+        /// Specifies that the counter should always be on the CPU if at all possible.
+        /// It applies only to hardware counters and only to group leaders.
+        /// If a pinned counter cannot be put onto the CPU (e.g., because there are not
+        /// enough hardware counters or because of a conflict with some other event),
+        /// then the session cannot be created. 
+        /// </summary>
         public Factory WithPinned(bool pinned = true)
         {
             Session.EnsureNotOpened();
@@ -62,6 +68,9 @@ public partial class PerfEventCounterSession
             return this;
         }
 
+        /// <summary>
+        /// If this is not set, the count excludes events that happen in kernel space.
+        /// </summary>
         public Factory WithKernel(bool withKernel = true)
         {
             Session.EnsureNotOpened();
@@ -69,6 +78,11 @@ public partial class PerfEventCounterSession
             return this;
         }
 
+        /// <summary>
+        /// Specifies whether the counter starts out disabled or enabled
+        /// </summary>
+        /// <param name="enabled"></param>
+        /// <returns></returns>
         public Factory WithEnabled(bool enabled = true)
         {
             Session.EnsureNotOpened();
@@ -167,19 +181,29 @@ public partial class PerfEventCounterSession
             return this;
         }
 
-        // private Factory WithTracepointCounter(uint tracepointId)
-        // {
-        //     throw new NotImplementedException($"{nameof(PerfTypeId.Tracepoint)} counters are not implemented yet.");
-        // }
-        //
-        // private Factory WithRawCounter(ulong rawConfig)
-        // {
-        //     throw new NotImplementedException($"{nameof(PerfTypeId.Raw)} counters are not implemented yet.");
-        // }
-        //
-        // private Factory WithBreakpointCounter(ulong bpType, ulong address, ulong length)
-        // {
-        //     throw new NotImplementedException($"{nameof(PerfTypeId.Breakpoint)} counters are not implemented yet.");
-        // }
+        /// <summary>
+        /// Add a raw counter specified by a config value.
+        /// </summary>
+        public Factory WithRawCounter(ulong config)
+        {
+            WithRawCounter(config, out _);
+            return this;
+        }
+
+        /// <summary>
+        /// Add a raw counter specified by a config value and get the counter instance as <paramref name="counter"/>.
+        /// </summary>
+        public Factory WithRawCounter(ulong config, out PerfEventCounter counter)
+        {
+            counter = Session.AddCounter(PerfTypeId.Raw, config);
+            return this;
+        }
+
+        public PerfEventCounterSession Create()
+        {
+            var session = Session;
+            session.Open();
+            return session;
+        }
     }
 }
