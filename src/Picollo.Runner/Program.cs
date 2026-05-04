@@ -11,7 +11,7 @@ Console.WriteLine($"Pinned: {pinned}");
 
 var tid = CpuUtils.GetOsThreadId();
 using var perfSession = PerfEventCounterSession
-    .For((int)tid, -1)
+    .Configure((int)tid, -1)
     .WithPinned(true)
     .WithEnabled(true)
     .WithHardwareCounters()

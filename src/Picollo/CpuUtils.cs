@@ -36,26 +36,6 @@ public static unsafe class CpuUtils
         return -1;
     }
 
-    // public static LinuxPerfCounterSession CreateCpuCyclesSessionForTid(int tid)
-    // {
-    //     return LinuxPerfCounterSession
-    //         .CreateForTid(tid)
-    //         .AddHardwareCounter(PerfHwId.CpuCycles)
-    //         .AddHardwareCounter(PerfHwId.Instructions)
-    //         .AddHardwareCounter(PerfHwId.CacheReferences)
-    //         .AddHardwareCounter(PerfHwId.CacheMisses)
-    //         .AddHardwareCounter(PerfHwId.BranchInstructions)
-    //         .AddHardwareCounter(PerfHwId.BranchMisses);
-    // }
-    //
-    // public static LinuxPerfCounterSession CreateCpuCyclesSessionForCurrentThread()
-    // {
-    //     var tid = checked((int)GetNativeThreadId());
-    //     if (tid <= 0)
-    //         throw new InvalidOperationException("Unable to resolve current native thread ID.");
-    //     return CreateCpuCyclesSessionForTid(tid);
-    // }
-
     public static ProcessThread? GetCurrentProcessThread()
     {
         var tid = GetOsThreadId();

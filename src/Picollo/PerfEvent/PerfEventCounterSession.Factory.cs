@@ -17,23 +17,23 @@ public partial class PerfEventCounterSession
     /// or a `/proc/sys/kernel/perf_event_paranoid` value of less than 1.
     /// <br /> <b>pid == -1 and cpu == -1</b>: This setting is invalid and will return an error. 
     /// </summary>
-    /// <param name="osThreadId">OS thread/process id to monitor</param>
-    /// <param name="cpuCoreId">CPU core id to monitor</param>
+    /// <param name="pid">OS thread/process id to monitor</param>
+    /// <param name="cpu">CPU core id to monitor</param>
     /// <returns>A <see cref="Factory"/> to configure a new session.</returns>
     /// <exception cref="PlatformNotSupportedException">The platform is not Linux x64</exception>
-    /// <exception cref="InvalidOperationException">Both <paramref name="osThreadId"/> and <paramref name="cpuCoreId"/> are negative.</exception>
-    public static Factory For(int osThreadId, int cpuCoreId)
+    /// <exception cref="InvalidOperationException">Both <paramref name="pid"/> and <paramref name="cpu"/> are negative.</exception>
+    public static Factory Configure(int pid, int cpu)
     {
         if (!OperatingSystem.IsLinux() || RuntimeInformation.OSArchitecture != Architecture.X64)
             throw new PlatformNotSupportedException("PerfEventCounterSession is supported only on Linux x64.");
 
-        if (osThreadId < 0) osThreadId = -1;
-        if (cpuCoreId < 0) cpuCoreId = -1;
+        if (pid < 0) pid = -1;
+        if (cpu < 0) cpu = -1;
 
-        if (osThreadId == -1 && cpuCoreId == -1)
+        if (pid == -1 && cpu == -1)
             throw new InvalidOperationException("Either osThreadId or cpu must be set to non-negative value");
 
-        return new Factory(new PerfEventCounterSession(osThreadId, cpuCoreId));
+        return new Factory(new PerfEventCounterSession(pid, cpu));
     }
 
     public readonly ref struct Factory
