@@ -23,7 +23,7 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
     private readonly HdrBuckets _buckets;
     private ulong _min = ulong.MaxValue;
     private ulong _max;
-    private ulong _total;
+    private ulong _totalCount;
     private T _overflowCounter;
     public ulong MaxTrackableValue { get; }
 
@@ -45,10 +45,27 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
         _data = new UnsafeSpan<T>(owner, 0, storageSize);
     }
 
-    public int BucketSize => _buckets.BucketSize;
-    public int BucketCount => _buckets.BucketCount;
-    
     public double RelativeError => _buckets.RelativeError;
+
+    public int BucketSize => _buckets.BucketSize;
+    public ulong MinValue => _min;
+    public ulong MaxValue => _max;
+
+    /// <summary>
+    /// The number of counters available in the backing storage.
+    /// </summary>
+    public int StorageSlotsCount => _data.Count;
+
+    public int FootprintInBytes =>
+        (int)_data.ByteLength
+        + 16 // this obj header 
+        + 24 // Array obj header + count
+        + 8 + 8 + 8 // UnsafeSpan
+        + 4 + 4 + 4 // Buckets
+        + 8 + 8 + 8 // min/max/total
+        + Unsafe.SizeOf<T>() // Overflow counter
+        + 8 // MaxTrackableValue
+    ;
 
     public void Increment(ulong value)
     {
@@ -61,7 +78,7 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
             _max = value;
 
         // It's free and is overlapped with subsequent slot load
-        _total++;
+        _totalCount++;
 
         GetRef(value)++;
     }
@@ -74,7 +91,7 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
         if (value > _max)
             _max = value;
 
-        _total += count;
+        _totalCount += count;
 
         T increment;
         if (typeof(T) == typeof(uint))
