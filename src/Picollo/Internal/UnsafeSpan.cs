@@ -26,6 +26,13 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     private readonly nint _byteOffset;
     private readonly nint _itemCount;
 
+    public UnsafeSpan(object owner, nint byteOffset, nint itemCount)
+    {
+        _owner = owner;
+        _byteOffset = byteOffset;
+        _itemCount = itemCount;
+    }
+
     public UnsafeSpan(T[] array, int itemOffset, int itemCount)
     {
         ArgumentNullException.ThrowIfNull(array);
@@ -70,7 +77,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     public ref T this[nint index]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref this[(uint)index];
+        get => ref this[(nuint)index];
     }
 
     public ref T this[nuint index]
@@ -78,7 +85,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get
         {
-            if ((nuint)index >= (nuint)_itemCount)
+            if (index >= (nuint)_itemCount)
                 throw new ArgumentOutOfRangeException(nameof(index));
             return ref GetAtUnsafe(index);
         }
@@ -92,6 +99,39 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref T GetAtUnsafe(nuint index) => ref Unsafe.Add(ref DataReference, index);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public UnsafeSpan<T> Slice(int start)
+    {
+        if ((uint)start > (uint)_itemCount)
+            throw new ArgumentOutOfRangeException(nameof(start));
+
+        return new UnsafeSpan<T>(_owner, _byteOffset + Unsafe.SizeOf<T>() * start, _itemCount - start);
+    }
+
+    /// <summary>
+    /// Forms a slice out of the given span, beginning at 'start', of given length
+    /// </summary>
+    /// <param name="start">The zero-based index at which to begin this slice.</param>
+    /// <param name="length">The desired length for the slice (exclusive).</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when the specified <paramref name="start"/> or end index is not in range (&lt;0 or &gt;Length).
+    /// </exception>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public UnsafeSpan<T> Slice(int start, int length)
+    {
+        // From Span<T>:
+        // Since start and length are both 32-bit, their sum can be computed across a 64-bit domain
+        // without loss of fidelity. The cast to uint before the cast to ulong ensures that the
+        // extension from 32- to 64-bit is zero-extending rather than sign-extending. The end result
+        // of this is that if either input is negative or if the input sum overflows past Int32.MaxValue,
+        // that information is captured correctly in the comparison against the backing _length field.
+        // We don't use this same mechanism in a 32-bit process due to the overhead of 64-bit arithmetic.
+        if ((ulong)(uint)start + (uint)length > (ulong)_itemCount)
+            throw new ArgumentOutOfRangeException();
+
+        return new UnsafeSpan<T>(_owner, _byteOffset + Unsafe.SizeOf<T>() * start, length);
+    }
+
     public Span<T> Span => MemoryMarshal.CreateSpan(ref DataReference, (int)_itemCount);
 
     T IReadOnlyList<T>.this[int index] => this[index];
@@ -104,31 +144,31 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     public struct Enumerator : IEnumerator<T>
     {
         private readonly UnsafeSpan<T> _span;
-        private nint _index;
+        internal nint Index;
 
         internal Enumerator(UnsafeSpan<T> span)
         {
             _span = span;
-            _index = -1;
+            Index = -1;
         }
 
-        public T Current => _span[_index];
+        public T Current => _span[Index];
         object IEnumerator.Current => Current!;
 
         public bool MoveNext()
         {
-            var index = _index + 1;
+            var index = Index + 1;
             if ((nuint)index < (nuint)_span._itemCount)
             {
-                _index = index;
+                Index = index;
                 return true;
             }
 
-            _index = _span._itemCount;
+            Index = _span._itemCount;
             return false;
         }
 
-        public void Reset() => _index = -1;
+        public void Reset() => Index = -1;
         public void Dispose() { }
     }
 

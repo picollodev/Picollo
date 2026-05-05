@@ -55,13 +55,13 @@ public static unsafe class CpuUtils
     /// restores current thread priority (nice 0),
     /// and pins current thread to a given logical core.
     /// </summary>
-    public static unsafe bool PrepareBenchmarkThread(int coreId)
+    public static bool PrepareBenchmarkThread(int coreId)
     {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return false;
+        
         try
         {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                return false;
-
             // Lower the whole process priority
             setpriority(PRIO_PROCESS, 0, 10);
 
@@ -69,15 +69,13 @@ public static unsafe class CpuUtils
             setpriority((int)GetOsThreadId(), 0, 0);
 
             // Pin to the selected core
-            unsafe
-            {
-                ulong* bits = stackalloc ulong[16];
-                bits[coreId / 64] |= 1UL << (coreId % 64);
-                return sched_setaffinity(0, (nint)(8 * 16), (nint)bits) == 0;
-            }
+            ulong* bits = stackalloc ulong[16];
+            bits[coreId / 64] |= 1UL << (coreId % 64);
+            return sched_setaffinity(0, 8 * 16, (nint)bits) == 0;
         }
         catch
         {
+            //
         }
 
         return false;
@@ -116,7 +114,7 @@ public static unsafe class CpuUtils
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     public static void AddChain256(int blocks)
     {
-        // Based on benchmarks, it looks like the loop control is fully ILP-ed
+        // The loop control is fully ILP-ed
         long x = 1;
         long y = blocks;
         while (blocks-- > 0)
@@ -164,12 +162,12 @@ public static unsafe class CpuUtils
     }
 
     /// <summary>
-    /// Runs for 256 cycles per block amortized.
+    /// Runs for 512 cycles per block amortized.
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining | MethodImplOptions.AggressiveOptimization)]
     public static void AddChain512(int blocks)
     {
-        // Based on benchmarks, it looks like the loop control is fully ILP-ed
+        // The loop control is fully ILP-ed
         long x = 1;
         long y = blocks;
         while (blocks-- > 0)

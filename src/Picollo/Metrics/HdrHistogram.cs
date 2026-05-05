@@ -16,18 +16,29 @@ public static class HdrHistogram
     public static object Configure() => throw new NotImplementedException();
 }
 
+/// <summary>
+/// 
+/// </summary>
+/// <remarks>
+/// This type can be used across threads, but with caveats.
+/// Reads during updates should return usable but imprecise results.
+/// Hot concurrent writes can lose some updates, especially for hot buckets with typical values, and can badly affect the writer thread performance due to false sharing. 
+/// </remarks>
+/// <typeparam name="T">The backing storage type for counters. Only <see cref="uint"/> and <see cref="ulong"/> are supported.</typeparam>
 public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
-    private readonly UnsafeSpan<T> _data;
     private readonly HdrBuckets _buckets;
-    private ulong _min = ulong.MaxValue;
-    private ulong _max;
-    private ulong _totalCount;
-    private T _overflowCount;
+    private readonly UnsafeSpan<T> _data;
     public ulong MaxTrackableValue { get; }
+    private T _overflowCount;
 
     internal HdrHistogram(double relativeError = 0.001, ulong maxTrackableValue = ulong.MaxValue)
     {
+        // Only uint and ulong backing counter storage is supported initially
+        if (Unsafe.SizeOf<T>() >= 8 && nint.Size < 8)
+            throw new PlatformNotSupportedException(
+                $"32-bit runtimes are not supported for storage type `{typeof(T).Name}`. Use `Uint32` storage type.");
+
         _buckets = new HdrBuckets(relativeError);
         MaxTrackableValue = MaxTrackableValue;
 
@@ -47,63 +58,31 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
     public double RelativeError => _buckets.RelativeError;
 
     public int BucketSize => _buckets.BucketSize;
-    public ulong MinValue => _min;
-    public ulong MaxValue => _max;
 
     /// <summary>
     /// The number of counters available in the backing storage.
     /// </summary>
-    public int StorageSlotsCount => _data.Count;
+    internal int StorageSlotsCount => _data.Count;
 
     public int FootprintInBytes =>
         (int)_data.ByteLength
         + 16 // this obj header 
-        + 24 // Array obj header + count
+        + 24 // Array obj header + dim + count
         + 8 + 8 + 8 // UnsafeSpan
         + 4 + 4 + 4 // Buckets
-        + 8 + 8 + 8 // min/max/total
         + Unsafe.SizeOf<T>() // Overflow counter
         + 8 // MaxTrackableValue
     ;
 
-    public void Increment(ulong value)
-    {
-        // Min/max are almost never taken for normal observations.
-        // See https://hotforknowledge.com/2024/01/13/1brc-in-dotnet-among-fastest-on-linux-my-optimization-journey/#avgminmax-efficient-update
-        if (value < _min)
-            _min = value;
+    /// <summary>
+    /// Record a single observation of the <paramref name="value"/>.
+    /// </summary>
+    public void Record(ulong value) => GetRef(value)++;
 
-        if (value > _max)
-            _max = value;
-
-        // It's free and is overlapped with subsequent slot load
-        _totalCount++;
-
-        GetRef(value)++;
-    }
-
-    public void Add(ulong value, uint count)
-    {
-        if (value < _min)
-            _min = value;
-
-        if (value > _max)
-            _max = value;
-
-        _totalCount += count;
-
-        T increment;
-        if (typeof(T) == typeof(uint))
-            increment = (T)(object)count;
-        else if (typeof(T) == typeof(ulong))
-            increment = (T)(object)(ulong)count;
-        else if (typeof(T) == typeof(UInt128))
-            increment = (T)(object)(UInt128)count;
-        else
-            throw new NotSupportedException("Supported storage types are only uint, ulong and UInt128");
-
-        GetRef(value) += increment;
-    }
+    /// <summary>
+    /// Record <paramref name="count"/> observations of the <paramref name="value"/>.
+    /// </summary>
+    public void Record(ulong value, uint count) => GetRef(value) += UlongToT(count);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref T GetRef(ulong value)
@@ -114,124 +93,103 @@ public class HdrHistogram<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNu
         return ref _data.GetAtUnsafe(index);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ulong TtoUlong(T value)
     {
         ulong longValue;
         if (typeof(T) == typeof(uint))
             longValue = (uint)(object)value;
         else if (typeof(T) == typeof(ulong))
-            longValue = (ulong)(object)(T)value;
-        else if (typeof(T) == typeof(UInt128))
-            longValue = checked((ulong)(UInt128)(object)(T)value);
+            longValue = (ulong)(object)value;
         else
-            throw new NotSupportedException("Supported storage types are only uint, ulong and UInt128");
+            throw new NotSupportedException("Supported storage types are only uint and ulong");
 
         return longValue;
     }
 
-    public ulong GetValueAtPercentile(double percentile)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static T UlongToT(ulong value)
     {
-        // _totalCount may include overflow
-        var overflowCount = TtoUlong(_overflowCount);
-        var trackedTotal = _totalCount - overflowCount;
-        if (trackedTotal == 0)
-            return 0;
+        T tValue;
+        if (typeof(T) == typeof(uint))
+            tValue = (T)(object)checked((uint)value);
+        else if (typeof(T) == typeof(ulong))
+            tValue = (T)(object)value;
+        else
+            throw new NotSupportedException("Supported storage types are only uint and ulong");
 
-        if (percentile <= 0)
-            return _min;
+        return tValue;
+    }
 
-        if (percentile >= 100 && overflowCount == 0)
-            return _max;
+    /// <summary>
+    /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="percentile"/>.
+    /// <para />
+    /// If this instance is being updated during this call, then the value may be skewed higher.
+    /// If this instance is reset updated during this then this method can throw.
+    /// </summary>
+    /// <param name="percentile">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
+    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="percentile"/></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    public ulong GetValueAtPercentile(double percentile) => GetValueAtPercentile(percentile, _data.GetEnumerator(), null);
 
-        if (percentile > 100)
-            percentile = 100;
-
-        var target = trackedTotal * (percentile * 0.01);
-        if (!(target > 0))
-            return _min;
-
-        // If no values recorded, this is the last slot with zero
-        var firstIndex = _buckets.GetIndex(_min);
-        
-        // Last index is not known ahead of time, _max can be checked to MaxTrackedValue,
-        // but that is not needed as we keep track the running total and must stop when it equals to trackedTotal.
-        // Percentiles must not care about overflow count.
-        
-        ulong runningTotal = 0;
-        for (var index = firstIndex; index < (nuint)_data.LongCount; index++)
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="percentile"></param>
+    /// <param name="enumerator"></param>
+    /// <param name="existingTotalCount"></param>
+    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="percentile"/></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    internal ulong GetValueAtPercentile(double percentile, UnsafeSpan<T>.Enumerator enumerator, ulong? existingTotalCount)
+    {
+        enumerator.Reset();
+        var totalCount = existingTotalCount.GetValueOrDefault();
+        if (existingTotalCount is null)
         {
-            var count = TtoUlong(_data.GetAtUnsafe(index));
-            if (count == 0)
-                continue;
-
-            var nextTotal = runningTotal + count;
-            if (target <= nextTotal)
+            while (enumerator.MoveNext())
             {
-                var (start, step) = _buckets.GetBucket(index);
-                if (step != 1)
-                {
-                    var offset = (ulong)(((target - runningTotal) / count) * step);
-                    if (offset >= step)
-                        offset = step - 1;
-
-                    start += offset;
-                }
-
-                if (start < _min)
-                    return _min;
-
-                if (overflowCount == 0 && start > _max)
-                    return _max;
-
-                return start;
+                totalCount += TtoUlong(enumerator.Current);
             }
 
-            runningTotal = nextTotal;
+            enumerator.Reset();
         }
 
-        return overflowCount == 0 ? _max : 0;
-    }
-}
+        if (totalCount == 0)
+            return 0; 
+        
+        if (double.IsNaN(percentile))
+            percentile = 0.0;
 
-internal readonly struct HdrBuckets
-{
-    public readonly int BucketSize;
-    public readonly int BucketScale;
-    public readonly int BucketCount;
+        percentile = Math.Clamp(percentile, 0.0, 100.0);
+        
+        ulong targetCount = (ulong)Math.Ceiling(percentile / 100.0 * totalCount);
+        targetCount = Math.Clamp(targetCount, 1UL, totalCount);
+        
+        ulong runningCount = 0;
+        
+        while (enumerator.MoveNext())
+        {
+            ulong count = TtoUlong(enumerator.Current);
+            runningCount += count;
+            
+            if (runningCount < targetCount)
+                continue;
 
-    public double RelativeError => 0.5 / BucketSize;
+            var (start, step) = _buckets.GetBucket((nuint)enumerator.Index);
 
-    public HdrBuckets(double relativeError = 0.001)
-    {
-        if (relativeError <= 0)
-            relativeError = 0.001;
-        else if (relativeError < 0.00001)
-            relativeError = 0.00001;
-        else if (relativeError > 0.1)
-            relativeError = 0.1;
+            if (step != 1)
+            {
+                ulong previous = runningCount - count;
+                ulong rankInBucket = targetCount - previous - 1;
+                ulong offset = (ulong)((double)rankInBucket / count * step);
+                if (offset >= step)
+                    offset = step - 1;
+                start += offset;
+            }
 
-        BucketSize = (int)BitOperations.RoundUpToPowerOf2((uint)(0.5 / relativeError));
-        BucketScale = BitOperations.TrailingZeroCount(BucketSize);
-        BucketCount = 1 + 64 - BucketScale;
-    }
+            return start;
+        }
 
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public nuint GetIndex(ulong value)
-    {
-        int bucketIndex = 64 - BitOperations.LeadingZeroCount(value >> BucketScale);
-        int stepScale = bucketIndex - (bucketIndex != 0 ? 1 : 0); // No branches, JIT recognizes it's just the result of !=
-        ulong subIndex = (value >> stepScale) & ((1u << BucketScale) - 1);
-        var index = (((nuint)(uint)bucketIndex << BucketScale) + (nuint)subIndex);
-        return index;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public (ulong Start, ulong Step) GetBucket(nuint index)
-    {
-        var bucketIndex = index >> BucketScale;
-        var stepScale = (int)bucketIndex - (bucketIndex != 0 ? 1 : 0);
-        var subIndex = (ulong)(index & (nuint)((1u << BucketScale) - 1));
-        var start = (((bucketIndex != 0 ? 1UL << BucketScale : 0UL) + subIndex) << stepScale);
-        return (start, 1UL << stepScale);
+        throw new InvalidOperationException("Cannot find the requested percentile.");
     }
 }

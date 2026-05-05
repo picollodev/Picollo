@@ -5,6 +5,10 @@ namespace Picollo.PerfEvent;
 
 public partial class PerfEventCounterSession
 {
+    public static readonly bool IsSupported = OperatingSystem.IsLinux()
+                                              && RuntimeInformation.OSArchitecture == Architecture.X64
+                                              && NativeMethods.IsSupported();
+
     /// <summary>
     /// Returns a new session factory, which can be fluently configured and completed with a call to <see cref="Factory.Create"/>.
     /// </summary>

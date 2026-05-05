@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Picollo.Metrics;
 
 namespace Picollo.PerfEvent;
 
@@ -26,7 +27,7 @@ public class PerfEventCounter
         Config = config;
     }
 
-    internal List<ulong> PairReadOverheadList = new List<ulong>(PerfEventCounterSession.OverheadCalibrationIterations);
+    internal HdrHistogram<uint>? PairReadOverheadHistogram = new HdrHistogram<uint>(0.01, 100_000);
 
     /// <summary>
     /// Estimated overhead between two consecutive calls to <see cref="PerfEventCounterSession.Read"/>.

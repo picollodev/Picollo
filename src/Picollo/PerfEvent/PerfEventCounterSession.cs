@@ -191,16 +191,13 @@ public unsafe partial class PerfEventCounterSession : IDisposable
             Read();
             Read();
 
-            // TODO Use histograms
-
             foreach (PerfEventCounter counter in _counters)
             {
                 var pairOverhead = counter.RawDelta.Value;
-                counter.PairReadOverheadList.Add(pairOverhead);
+                counter.PairReadOverheadHistogram?.Record(pairOverhead);
                 if ((i == 0 || pairOverhead > counter.PairReadOverhead && pairOverhead > 0))
                 {
                     counter.PairReadOverhead = pairOverhead;
-                    // Console.WriteLine($"----> Set overhead for counter {counter.Name} to: {pairOverhead}");
                 }
 
                 Console.WriteLine($"PairOverhead for counter {counter.Name}: {pairOverhead}");
@@ -209,8 +206,8 @@ public unsafe partial class PerfEventCounterSession : IDisposable
 
         foreach (PerfEventCounter counter in _counters)
         {
-            counter.PairReadOverheadList.Sort();
-            counter.PairReadOverhead = counter.PairReadOverheadList[counter.PairReadOverheadList.Count / 10];
+            counter.PairReadOverhead = counter.PairReadOverheadHistogram?.GetValueAtPercentile(percentile: 10) ?? 0;
+            counter.PairReadOverheadHistogram = null;
             Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead}");
         }
     }

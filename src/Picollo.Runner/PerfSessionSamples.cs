@@ -1,6 +1,5 @@
 ﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
-
 using Picollo.PerfEvent;
 
 namespace Picollo.Runner;
@@ -9,7 +8,7 @@ public class PerfSessionSamples
 {
     public static void PerfSessionSample()
     {
-        var pinned = Picollo.CpuUtils.PrepareBenchmarkThread(8);
+        var pinned = CpuUtils.PrepareBenchmarkThread(8);
         Console.WriteLine($"Pinned: {pinned}");
 
         var tid = CpuUtils.GetOsThreadId();
@@ -30,7 +29,11 @@ public class PerfSessionSamples
                 // .WithHardwareCounters(PerfSwIds.Dummy)
                 .Create();
 
-// perfSession.GetSnapshot();
+
+        foreach (PerfEventCounter counter in perfSession.Counters)
+        {
+            Console.WriteLine($"Overhead for counter {counter.Name} is: {counter.PairReadOverhead:N0}");
+        }
 
         Console.WriteLine($"IsAvailable: {PerfHelpers.IsAvailable()}");
 

@@ -47,18 +47,18 @@ public class HdrHistogramTests
     public void GetPercentile()
     {
         var h = new HdrHistogram<uint>(0.01);
-        h.Increment(1);
-        h.Increment(2);
-        h.Increment(3);
-        h.Increment(4);
-        h.Increment(5);
-        // h.GetValueAtPercentile(0).ShouldBe(1ul);
-        // h.GetValueAtPercentile(10).ShouldBe(1ul);
-        // h.GetValueAtPercentile(20).ShouldBe(1ul);
-        // h.GetValueAtPercentile(40).ShouldBe(2ul);
-        h.GetValueAtPercentile(79).ShouldBe(3ul);
-        // h.GetValueAtPercentile(80).ShouldBe(4ul);
-        // h.GetValueAtPercentile(81).ShouldBe(4ul);
-        // h.GetValueAtPercentile(100).ShouldBe(5ul);
+        h.Record(1);
+        h.Record(2);
+        h.Record(3);
+        h.Record(4);
+        h.Record(5);
+        h.GetValueAtPercentile(percentile: 0).ShouldBe(1ul);
+        h.GetValueAtPercentile(percentile: 10).ShouldBe(1ul);
+        h.GetValueAtPercentile(percentile: 20).ShouldBe(1ul);
+        h.GetValueAtPercentile(percentile: 40).ShouldBe(2ul);
+        h.GetValueAtPercentile(percentile: 79).ShouldBe(4ul);
+        h.GetValueAtPercentile(percentile: 80).ShouldBe(4ul);
+        h.GetValueAtPercentile(percentile: 81).ShouldBe(5ul);
+        h.GetValueAtPercentile(percentile: 100).ShouldBe(5ul);
     }
 }
