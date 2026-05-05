@@ -7,11 +7,11 @@
     <Authors>Victor Baybekov</Authors>
     <Copyright>Copyright (c) 2026 Victor Baybekov (@buybackoff)</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/picollodev/picollo</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/picollodev/picollo</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/picollodev/Picollo</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/picollodev/Picollo</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Description>Performance Instrumentation and Continuous Observation for Latency and Low-level Optimizations. Tools for serious performance work in .NET</Description>
-    <PackageTags>picollo;dotnet</PackageTags>
+    <Description>Picollo: Performance Instrumentation and Continuous Observation for Low-Level Optimization</Description>
+    <PackageTags>picollo;performance;perf;perf_event;perf_event_open;hdr;hdrhistogram;histogram</PackageTags>
     <PackageIcon>Picollo.png</PackageIcon>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -20,6 +20,6 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)..\Picollo.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\Picollo.png" Pack="true" PackagePath="\" Visible="false"/>
   </ItemGroup>
 </Project>

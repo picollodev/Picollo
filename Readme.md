@@ -1,4 +1,4 @@
-# Picollo: Performance Instrumentation and Continuous Observation for Low-Level Optimizations
+# Picollo: Performance Instrumentation and Continuous Observation for Low-Level Optimization
 
 Tools for serious performance work in .NET
 
