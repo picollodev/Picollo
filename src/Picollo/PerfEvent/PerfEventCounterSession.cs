@@ -199,16 +199,13 @@ public unsafe partial class PerfEventCounterSession : IDisposable
                 {
                     counter.PairReadOverhead = pairOverhead;
                 }
-
-                Console.WriteLine($"PairOverhead for counter {counter.Name}: {pairOverhead}");
             }
         }
 
         foreach (PerfEventCounter counter in _counters)
         {
-            counter.PairReadOverhead = counter.PairReadOverheadHistogram?.GetValueAtPercentile(percentile: 10) ?? 0;
+            counter.PairReadOverhead = counter.PairReadOverheadHistogram?.GetPercentileValue(rank: 10) ?? 0;
             counter.PairReadOverheadHistogram = null;
-            Console.WriteLine($"----> Set overhead for counter {counter} {counter.RawDelta.Value} to: {counter.PairReadOverhead}");
         }
     }
 

@@ -5,8 +5,9 @@ internal class Program
 {
     public static void Main(string[] args)
     {
-        // HdrHistogramBenches.PicolloBench();
-        // HdrHistogramBenches.LegacyBench();
+        HdrHistogramBenches.PicolloBench(10);
+        HdrHistogramBenches.LegacyBench(10);
+        
 
         if (!PerfEventCounterSession.IsSupported)
         {

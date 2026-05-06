@@ -6,14 +6,18 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = long.MaxValue;
+    private const long MaxValue = 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 4; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
+
+    private static readonly int Rounds = 100;
 
     private static readonly long[] Values = InitValues();
 
     private static long[] InitValues()
     {
+        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.UpperBound;
+
         var count = 1_000_000;
         var values = new long[count];
         Random random = new Random(42);
@@ -30,11 +34,9 @@ public class HdrHistogramBenches
     {
         Console.WriteLine("# Picollo HdrHistogram");
 
-        var h = new HdrHistogram<uint>(1 / Math.Pow(10.0, SignificantDigits), (ulong)MaxValue);
+        var h = new ConcurrentHdrHistogram<uint>(0.5 / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
 
         Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
-
-        var rounds = 100;
 
         var sw = Stopwatch.StartNew();
 
@@ -42,7 +44,7 @@ public class HdrHistogramBenches
         {
             sw.Restart();
 
-            for (int r = 0; r < rounds; r++)
+            for (int r = 0; r < Rounds; r++)
             {
                 foreach (long value in Values)
                 {
@@ -52,14 +54,26 @@ public class HdrHistogramBenches
 
             sw.Stop();
 
-            var totalOps = rounds * Values.Length;
+            var totalOps = Rounds * Values.Length;
             var elapsed = sw.Elapsed;
             var perOp = elapsed.TotalNanoseconds / totalOps;
             Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
 
+
+        using (h.GetTickScope())
+        {
+            // work
+        }
+        
+        var p999 = h.GetPercentile(99.9);
+
+        var p999Value = p999.Value;
+
+        Console.WriteLine($"P99.9: {p999Value:N0}");
+
         Console.WriteLine(
-            $"Percentiles: P1 {h.GetValueAtPercentile(1):N0}, P50 {h.GetValueAtPercentile(50):N0}, P90 {h.GetValueAtPercentile(90):N0}, P99 {h.GetValueAtPercentile(99):N0}, P99.9 {h.GetValueAtPercentile(99.9):N0}");
+            $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
 
         Console.WriteLine();
     }
@@ -68,10 +82,8 @@ public class HdrHistogramBenches
     {
         Console.WriteLine("# Legacy HdrHistogram");
 
-        var h = new IntHistogram(1, MaxValue, SignificantDigits);
+        var h = new IntConcurrentHistogram(1, MaxValue, SignificantDigits);
         Console.WriteLine($"Footprint in bytes: {h.GetEstimatedFootprintInBytes():N0}");
-
-        var rounds = 100;
 
         var sw = Stopwatch.StartNew();
 
@@ -79,7 +91,7 @@ public class HdrHistogramBenches
         {
             sw.Restart();
 
-            for (int r = 0; r < rounds; r++)
+            for (int r = 0; r < Rounds; r++)
             {
                 foreach (long value in Values)
                 {
@@ -89,13 +101,64 @@ public class HdrHistogramBenches
 
             sw.Stop();
 
-            var totalOps = rounds * Values.Length;
+            var totalOps = Rounds * Values.Length;
             var elapsed = sw.Elapsed;
             var perOp = elapsed.TotalNanoseconds / totalOps;
             Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
 
+        var p999Count = h.GetCountAtValue(h.GetValueAtPercentile(99.9));
+        var p999Value = h.GetValueAtPercentile(99.9);
+
+        Console.WriteLine($"P99.9: {p999Value:N0}");
+
         Console.WriteLine(
             $"Percentiles: P1 {h.GetValueAtPercentile(1):N0}, P50 {h.GetValueAtPercentile(50):N0}, P90 {h.GetValueAtPercentile(90):N0}, P99 {h.GetValueAtPercentile(99):N0}, P99.9 {h.GetValueAtPercentile(99.9):N0}");
+    }
+
+    // https://github.com/HdrHistogram/HdrHistogram.NET/pull/169
+    public static void Verify()
+    {
+        var hp = new HdrHistogram<uint>(0.5 / Math.Pow(10.0, SignificantDigits), 0, long.MaxValue);
+        var hl = new IntHistogram(1, long.MaxValue, SignificantDigits);
+
+        for (int i = 0; i < 8; i++)
+        {
+            hp.Record(1);
+            hl.RecordValue(1);
+        }
+
+        hp.Record(1UL << 41);
+        hl.RecordValue(1L << 41);
+
+        hp.Record(1UL << 50);
+        hl.RecordValue(1L << 50);
+
+        var hp90 = hp.GetPercentile(90);
+        var hl90 = hl.GetValueAtPercentile(90);
+
+        Console.WriteLine($"Target P90: {(1UL << 41):N0}");
+        Console.WriteLine($"Picollo P90: {hp90.GetValue(EquivalentValueSelection.UpperBound):N0}");
+        Console.WriteLine($"Legacy P90: {hl90:N0}");
+    }
+
+    public static void BugRepro()
+    {
+        var h = new IntHistogram(1, long.MaxValue, SignificantDigits);
+
+        for (int i = 0; i < 8; i++)
+        {
+            h.RecordValue(1);
+        }
+
+        h.RecordValue((1L << 41) + 1);
+
+        h.RecordValue((1L << 50) + 1);
+
+        var p90 = h.GetValueAtPercentile(90);
+
+        Console.WriteLine($"Target: {(1UL << 41) + 1:N0}");
+        Console.WriteLine($"Expected P90: {(1UL << 41) + (1UL << 31) - 1:N0}");
+        Console.WriteLine($"Actual P90: {p90:N0}");
     }
 }

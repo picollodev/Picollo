@@ -33,6 +33,10 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
         _itemCount = itemCount;
     }
 
+    public UnsafeSpan(T[] array) : this(array, 0, array.Length)
+    {
+    }
+
     public UnsafeSpan(T[] array, int itemOffset, int itemCount)
     {
         ArgumentNullException.ThrowIfNull(array);

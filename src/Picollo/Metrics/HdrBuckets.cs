@@ -5,11 +5,11 @@ namespace Picollo.Metrics;
 
 internal readonly struct HdrBuckets
 {
-    public readonly int BucketSize;
-    public readonly int BucketScale;
-    public readonly int BucketCount;
+    public readonly int BlockSize;
+    public readonly int BlockScale;
+    public readonly int BlockCount;
 
-    public double RelativeError => 0.5 / BucketSize;
+    public double RelativeError => 0.5 / BlockSize;
 
     public HdrBuckets(double relativeError = 0.001)
     {
@@ -20,28 +20,28 @@ internal readonly struct HdrBuckets
         else if (relativeError > 0.1)
             relativeError = 0.1;
 
-        BucketSize = (int)BitOperations.RoundUpToPowerOf2((uint)(0.5 / relativeError));
-        BucketScale = BitOperations.TrailingZeroCount(BucketSize);
-        BucketCount = 1 + 64 - BucketScale;
+        BlockSize = (int)BitOperations.RoundUpToPowerOf2((uint)(0.5 / relativeError));
+        BlockScale = BitOperations.TrailingZeroCount(BlockSize);
+        BlockCount = 1 + 64 - BlockScale;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public nuint GetIndex(ulong value)
     {
-        int bucketIndex = 64 - BitOperations.LeadingZeroCount(value >> BucketScale);
-        int stepScale = bucketIndex - (bucketIndex != 0 ? 1 : 0); // No branches, JIT recognizes it's just the result of !=
-        ulong subIndex = (value >> stepScale) & ((1u << BucketScale) - 1);
-        var index = (((nuint)(uint)bucketIndex << BucketScale) + (nuint)subIndex);
+        int blockIndex = 64 - BitOperations.LeadingZeroCount(value >> BlockScale);
+        int stepScale = blockIndex - (blockIndex != 0 ? 1 : 0); // No branches, JIT recognizes it's just the result of !=
+        ulong bucketIndexInBlock = (value >> stepScale) & ((1u << BlockScale) - 1);
+        var index = (((nuint)(uint)blockIndex << BlockScale) + (nuint)bucketIndexInBlock);
         return index;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public (ulong Start, ulong Step) GetBucket(nuint index)
+    public (ulong Start, ulong Step) GetBucketRange(nuint index)
     {
-        var bucketIndex = index >> BucketScale;
-        var stepScale = (int)bucketIndex - (bucketIndex != 0 ? 1 : 0);
-        var subIndex = (ulong)(index & (nuint)((1u << BucketScale) - 1));
-        var start = (((bucketIndex != 0 ? 1UL << BucketScale : 0UL) + subIndex) << stepScale);
+        var blockIndex = index >> BlockScale;
+        var stepScale = (int)blockIndex - (blockIndex != 0 ? 1 : 0);
+        var bucketIndexInBlock = (ulong)(index & (nuint)((1u << BlockScale) - 1));
+        var start = (((blockIndex != 0 ? 1UL << BlockScale : 0UL) + bucketIndexInBlock) << stepScale);
         return (start, 1UL << stepScale);
     }
 }
