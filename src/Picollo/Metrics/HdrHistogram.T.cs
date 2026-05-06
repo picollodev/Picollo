@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
 using Picollo.Internal;
 
@@ -32,17 +33,15 @@ public sealed class HdrHistogram<T> : HdrHistogram
     }
 
     /// <summary>
-    /// The total number of observations that fell outside the [<see cref="MinTrackableValue"/>, <see cref="MaxTrackableValue"/>] range.
+    /// The total number of observations that fell outside the [<see cref="HdrHistogram.MinTrackableValue"/>, <see cref="HdrHistogram.MaxTrackableValue"/>] range.
     /// </summary>
     public override ulong OverflowCount => TtoUlong(OverflowSlot);
-
-    
 
     public override int FootprintInBytes =>
         (int)Data.ByteLength
         + 16 // this obj header 
         + 24 // Array obj header + dim + count
-        + 8 + 8 + 8 // UnsafeSpan
+        + 8 + 8 + 8 // Data
         + 4 + 4 + 4 // Buckets
         + Unsafe.SizeOf<T>() // Overflow counter
         + 8 // MaxTrackableValue
@@ -52,7 +51,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
     {
         Version++;
         OverflowSlot = default;
-        Data.Span.Clear();
+        Data.AsSpan().Clear();
     }
 
     /// <summary>
@@ -111,7 +110,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
     /// </summary>
     /// <param name="rank"></param>
     /// <returns></returns>
-    public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data.GetEnumerator(), null);
+    public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data, null);
 
     /// <summary>
     /// Returns <see cref="Bucket"/> details for the given value.
@@ -140,22 +139,20 @@ public sealed class HdrHistogram<T> : HdrHistogram
     /// 
     /// </summary>
     /// <param name="rank"></param>
-    /// <param name="enumerator"></param>
+    /// <param name="data"></param>
     /// <param name="existingTotalCount"></param>
     /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
     /// <exception cref="InvalidOperationException"></exception>
-    internal Percentile GetPercentile(double rank, UnsafeSpan<T>.Enumerator enumerator, ulong? existingTotalCount)
+    internal Percentile GetPercentile(double rank, UnsafeSpan<T> data, ulong? existingTotalCount)
     {
-        enumerator.Reset();
         var totalCount = existingTotalCount.GetValueOrDefault();
         if (existingTotalCount is null)
         {
-            while (enumerator.MoveNext())
+            for (nint i = 0; i < data.LongCount; i++)
             {
-                totalCount += TtoUlong(enumerator.Current);
+                T value = data.GetAtUnsafe(i);
+                totalCount += TtoUlong(value);
             }
-
-            enumerator.Reset();
         }
 
         if (totalCount == 0)
@@ -171,15 +168,16 @@ public sealed class HdrHistogram<T> : HdrHistogram
 
         ulong runningCount = 0;
 
-        while (enumerator.MoveNext())
+        for (nint i = 0; i < data.LongCount; i++)
         {
-            ulong count = TtoUlong(enumerator.Current);
+            T value = data.GetAtUnsafe(i);
+            ulong count = TtoUlong(value);
             runningCount += count;
 
             if (runningCount < targetCount)
                 continue;
 
-            var storageIndex = (nuint)enumerator.Index;
+            var storageIndex = (nuint)i;
             var logicalIndex = storageIndex + _firstIndexOffset;
 
             var (start, step) = _buckets.GetBucketRange(logicalIndex);
@@ -190,5 +188,12 @@ public sealed class HdrHistogram<T> : HdrHistogram
         }
 
         throw new InvalidOperationException("Cannot find the requested percentile.");
+    }
+
+    // Bad for public API, this should be exposed on the snapshot
+    internal void Add(HdrHistogram<T> other)
+    {
+        OverflowSlot += UlongToT(other.OverflowCount);
+        TensorPrimitives.Add(other.Data.AsSpan(), Data.AsSpan(), Data.AsSpan());
     }
 }

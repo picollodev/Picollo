@@ -1,66 +1,25 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Numerics;
-using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 using System.Threading;
 using Picollo.Internal;
 
+// ReSharper disable InconsistentNaming
 // ReSharper disable StaticMemberInGenericType
 
 namespace Picollo.Metrics;
 
 public sealed partial class ConcurrentHdrHistogram<T>
 {
-    private class ThreadContainer
-    {
-        public UnsafeSpan<WeakGCHandle<HdrHistogram<T>>> Slots;
+    private static readonly ConcurrentDictionary<int, WeakReference<HdrHistogram<T>?[]?>> KnownSlotsByThreadId = new();
 
-        public WeakGCHandle<object> Sentinel;
-        public int ThreadId;
+    [ThreadStatic]
+    private static ResizeableArray<HdrHistogram<T>?> ts_slots;
 
-        public ThreadContainer()
-        {
-            EnsureCapacity(UsedSlots.Capacity);
-            Sentinel = new WeakGCHandle<object>(_sentinel ??= new());
-            ThreadId = Environment.CurrentManagedThreadId;
-            KnownSlotsByThreadId[ThreadId] = new WeakGCHandle<ThreadContainer>(this);
-        }
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public void EnsureCapacity(nint capacity)
-        {
-            if (capacity <= Slots.LongCount)
-                return;
-
-            var newSlots =
-                new UnsafeSpan<WeakGCHandle<HdrHistogram<T>>>(
-                    new WeakGCHandle<HdrHistogram<T>>[BitOperations.RoundUpToPowerOf2((uint)capacity)]);
-
-            if(Slots.Count > 0)
-                Slots.Span.CopyTo(newSlots.Span.Slice(0, Slots.Count));
-
-            Slots = newSlots;
-        }
-
-        public bool IsThreadAlive => Sentinel.IsAllocated && Sentinel.TryGetTarget(out object? _);
-    }
-
-    // TODO This ThreadId-keyed weak map can go stale when a thread dies or its container is collected.
-    // TODO Disposal then looks up a dead/missing container, skips slot cleanup, and leaves stale slot state behind.
-    private static readonly ConcurrentDictionary<int, WeakGCHandle<ThreadContainer>> KnownSlotsByThreadId = new();
-
-    [ThreadStatic] private static ThreadContainer? _threadLocalContainer;
-    [ThreadStatic] private static object? _sentinel;
-
-    // TODO Slot reuse assumes every per-thread weak slot for this index was cleared during disposal.
-    // TODO If cleanup misses a thread, a later histogram can reuse the same slot index and observe stale slot contents.
     private static readonly List<bool> UsedSlots = new(128);
 
-
-    private static nint GetUnusedSlot()
+    private static nuint GetUnusedSlot()
     {
         lock (UsedSlots)
         {
@@ -71,18 +30,17 @@ public sealed partial class ConcurrentHdrHistogram<T>
                 UsedSlots.Add(true);
             }
 
-            return idx;
+            return (nuint)idx;
         }
     }
 
-    private readonly nint _slotIndex;
+    private readonly nuint _slotIndex;
 
-    // TODO These strong refs retain histograms after their threads are gone, so long-lived instances can accumulate dead-thread state.
-    // TODO The locked List is also fragile because readers enumerate it without locking, while Allocate mutates it under a lock.
-    // TODO Replace with a manual array+count resized atomically and safely so readers can walk a stable snapshot.
-    // TODO Histogram entries in that array should be nullable so disposal/cleanup can null dead slots and readers can just skip nulls.
-    private readonly List<(int ThreadId, HdrHistogram<T> Histogram)> _children = new(Environment.ProcessorCount);
+    private (int ThreadId, HdrHistogram<T>? Histogram)[] _children =
+        new (int ThreadId, HdrHistogram<T>? Histogram)[Environment.ProcessorCount];
+
     private HdrHistogram<T> _accumulator;
+    private HdrHistogram<T>? _deadAccumulator;
 
     public ConcurrentHdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue) :
         base(relativeError, minTrackableValue, maxTrackableValue)
@@ -94,28 +52,89 @@ public sealed partial class ConcurrentHdrHistogram<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private HdrHistogram<T> GetLocalHistogram()
     {
-        var index = _slotIndex;
-        var threadLocalContainer = _threadLocalContainer ??= new ThreadContainer();
-        if (index >= threadLocalContainer.Slots.LongCount)
-            threadLocalContainer.EnsureCapacity(index + 1);
-
-        ref var wr = ref threadLocalContainer.Slots.GetAtUnsafe(index);
-        if (!wr.IsAllocated || !wr.TryGetTarget(out var histogram))
-        {
-            histogram = Allocate(threadLocalContainer.ThreadId);
-            wr = new WeakGCHandle<HdrHistogram<T>>(histogram);
-        }
-
-        return histogram;
+        // Here ??= is visibly worse
+        var h = ts_slots.GetRef(_slotIndex);
+        if (h is null)
+            ts_slots.GetRef(_slotIndex) = h = Allocate(Environment.CurrentManagedThreadId);
+        return h;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     private HdrHistogram<T> Allocate(int threadId)
     {
         var histogram = new HdrHistogram<T>(_accumulator.RelativeError, _accumulator.MinTrackableValue, _accumulator.MaxTrackableValue);
-        lock (_children)
+
+        if (KnownSlotsByThreadId.TryGetValue(threadId, out WeakReference<HdrHistogram<T>?[]?>? weakReference))
+            weakReference.SetTarget(ts_slots.Data);
+        else
+            KnownSlotsByThreadId[threadId] = new WeakReference<HdrHistogram<T>?[]?>(ts_slots.Data);
+
+        lock (_accumulator)
         {
-            _children.Add((threadId, histogram));
+            var children = _children;
+            int idx = -1;
+
+            // Scan for dead threads
+            for (int i = 0; i < children.Length; i++)
+            {
+                var (tid, h) = children[i];
+                if (h is null)
+                {
+                    if (idx == -1)
+                        idx = i;
+                    continue;
+                }
+
+                if (!KnownSlotsByThreadId.TryGetValue(tid, out var wr)
+                    || !wr.TryGetTarget(out _))
+                {
+                    // Slots were collected
+                    if(wr is not null)
+                        KnownSlotsByThreadId.TryRemove(tid, out _);
+                    
+                    if (_deadAccumulator is null)
+                        _deadAccumulator = h;
+                    else
+                        _deadAccumulator.Add(h);
+
+                    children[i] = default;
+                    if (idx == -1)
+                        idx = i;
+                }
+            }
+
+            // Scan for threadId match 
+            for (int i = 0; i < children.Length; i++)
+            {
+                var (tid, h) = children[i];
+                if (tid == threadId)
+                {
+                    if (h is not null)
+                    {
+                        if (_deadAccumulator is null)
+                            _deadAccumulator = h;
+                        else
+                            _deadAccumulator.Add(h);
+                    }
+                    else
+                    {
+                        throw new ApplicationException("Found a null histogram with non-zero threadId.");
+                    }
+
+                    idx = i;
+                    break;
+                }
+            }
+
+            if (idx == -1)
+            {
+                idx = children.Length;
+                var newChildren = new (int ThreadId, HdrHistogram<T>? Histogram)[children.Length * 2];
+                children.CopyTo(newChildren);
+                children = _children = newChildren;
+            }
+
+            children[idx] = (threadId, histogram);
         }
 
         return histogram;
@@ -123,11 +142,16 @@ public sealed partial class ConcurrentHdrHistogram<T>
 
     private void Accumulate()
     {
-        foreach ((_, HdrHistogram<T> h) in _children)
+        _accumulator.Reset();
+        foreach ((_, HdrHistogram<T>? histogram) in _children)
         {
-            _accumulator.OverflowSlot += h.OverflowSlot;
-            TensorPrimitives.Add(h.Data.Span, _accumulator.Data.Span, _accumulator.Data.Span);
+            if (histogram is null)
+                continue;
+            _accumulator.Add(histogram);
         }
+
+        if (_deadAccumulator is { } da)
+            _accumulator.Add(da);
     }
 
     private void DoDispose()
@@ -136,20 +160,19 @@ public sealed partial class ConcurrentHdrHistogram<T>
         if (accumulator == null!)
             return;
 
-        foreach ((int threadId, HdrHistogram<T> _) in _children)
+        _deadAccumulator = null;
+        
+        foreach ((int threadId, _) in _children)
         {
             if (KnownSlotsByThreadId.TryGetValue(threadId, out var wr))
             {
-                if (!wr.IsAllocated || !wr.TryGetTarget(out var threadContainer))
+                if (!wr.TryGetTarget(out var threadContainer))
                 {
                     KnownSlotsByThreadId.TryRemove(threadId, out _);
                     continue;
                 }
 
-                // TODO Verify that the slot still belongs to this histogram instance before clearing it.
-                // TODO Today a reused ThreadId or missed cleanup can make us clear the wrong reused slot or leave the old one behind.
-                threadContainer.Slots[_slotIndex].Dispose();
-                threadContainer.Slots[_slotIndex] = default;
+                threadContainer[_slotIndex] = null;
             }
         }
 

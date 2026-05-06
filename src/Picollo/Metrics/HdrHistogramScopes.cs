@@ -5,12 +5,12 @@ namespace Picollo.Metrics;
 
 /// <summary>
 /// A <c>using</c>-pattern scope that measures elapsed <see cref="Stopwatch"/> ticks from construction to
-/// <see cref="Dispose"/> (or an explicit <see cref="Record"/> call) and records the value into a histogram.
+/// <see cref="Dispose"/> and records the value into a histogram.
 /// </summary>
 public struct TickScope : IDisposable
 {
     private HdrHistogram? _histogram;
-    public ulong Value { get; private set; }
+    private readonly ulong _value;
 
     /// <summary>
     /// Number of ticks in one second (<see cref="Stopwatch.Frequency"/>).
@@ -22,18 +22,12 @@ public struct TickScope : IDisposable
     public TickScope(HdrHistogram histogram)
     {
         _histogram = histogram;
-        Value = (ulong)Stopwatch.GetTimestamp();
-    }
-
-    public void Record()
-    {
-        Value = (ulong)Stopwatch.GetTimestamp() - Value;
-        _histogram?.Record(Value);
+        _value = (ulong)Stopwatch.GetTimestamp();
     }
 
     public void Dispose()
     {
-        Record();
+        _histogram?.Record((ulong)Stopwatch.GetTimestamp() - _value);
         _histogram = null;
     }
 }
@@ -45,7 +39,7 @@ public struct TickScope : IDisposable
 public struct NanoScope : IDisposable
 {
     private HdrHistogram? _histogram;
-    public ulong Value { get; private set; }
+    private readonly ulong _value;
 
     /// <summary>
     /// Number of nanoseconds in one second (1 000 000 000).
@@ -57,31 +51,25 @@ public struct NanoScope : IDisposable
     public NanoScope(HdrHistogram histogram)
     {
         _histogram = histogram;
-        Value = (ulong)Stopwatch.GetTimestamp();
-    }
-
-    public void Record()
-    {
-        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - Value;
-        Value = elapsed * 1_000_000_000UL / (ulong)Stopwatch.Frequency;
-        _histogram?.Record(Value);
+        _value = (ulong)Stopwatch.GetTimestamp();
     }
 
     public void Dispose()
     {
-        Record();
+        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - _value;
+        _histogram?.Record(elapsed * 1_000_000_000UL / (ulong)Stopwatch.Frequency);
         _histogram = null;
     }
 }
 
 /// <summary>
 /// A <c>using</c>-pattern scope that measures elapsed microseconds from construction to
-/// <see cref="Dispose"/> (or an explicit <see cref="Record"/> call) and records the value into a histogram.
+/// <see cref="Dispose"/> and records the value into a histogram.
 /// </summary>
 public struct MicroScope : IDisposable
 {
     private HdrHistogram? _histogram;
-    public ulong Value { get; private set; }
+    private readonly ulong _value;
 
     /// <summary>
     /// Number of microseconds in one second (1 000 000).
@@ -93,31 +81,25 @@ public struct MicroScope : IDisposable
     public MicroScope(HdrHistogram histogram)
     {
         _histogram = histogram;
-        Value = (ulong)Stopwatch.GetTimestamp();
-    }
-
-    public void Record()
-    {
-        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - Value;
-        Value = elapsed * 1_000_000UL / (ulong)Stopwatch.Frequency;
-        _histogram?.Record(Value);
+        _value = (ulong)Stopwatch.GetTimestamp();
     }
 
     public void Dispose()
     {
-        Record();
+        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - _value;
+        _histogram?.Record(elapsed * 1_000_000UL / (ulong)Stopwatch.Frequency);
         _histogram = null;
     }
 }
 
 /// <summary>
 /// A <c>using</c>-pattern scope that measures elapsed milliseconds from construction to
-/// <see cref="Dispose"/> (or an explicit <see cref="Record"/> call) and records the value into a histogram.
+/// <see cref="Dispose"/> and records the value into a histogram.
 /// </summary>
 public struct MilliScope : IDisposable
 {
     private HdrHistogram? _histogram;
-    public ulong Value { get; private set; }
+    private readonly ulong _value;
 
     /// <summary>
     /// Number of milliseconds in one second (1 000).
@@ -129,19 +111,13 @@ public struct MilliScope : IDisposable
     public MilliScope(HdrHistogram histogram)
     {
         _histogram = histogram;
-        Value = (ulong)Stopwatch.GetTimestamp();
-    }
-
-    public void Record()
-    {
-        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - Value;
-        Value = elapsed * 1_000UL / (ulong)Stopwatch.Frequency;
-        _histogram?.Record(Value);
+        _value = (ulong)Stopwatch.GetTimestamp();
     }
 
     public void Dispose()
     {
-        Record();
+        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - _value;
+        _histogram?.Record(elapsed * 1_000UL / (ulong)Stopwatch.Frequency);
         _histogram = null;
     }
 }

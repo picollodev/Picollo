@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 
 namespace Picollo.Metrics;
 
@@ -10,19 +11,39 @@ public sealed partial class ConcurrentHdrHistogram<T> : HdrHistogram
         get
         {
             ulong acc = 0ul;
-            foreach ((_, HdrHistogram<T> histogram) in _children)
+            foreach ((_, HdrHistogram<T>? histogram) in _children)
             {
-                acc += histogram.OverflowCount;
+                acc += histogram?.OverflowCount ?? 0;
             }
 
+            if (_deadAccumulator is { } da)
+                acc += da.OverflowCount;
+            
             return acc;
         }
     }
 
-    public override int FootprintInBytes => (_children.Count + 1) * _accumulator.FootprintInBytes;
+    internal int ChildrenCount
+    {
+        get
+        {
+            var count = 0;
+            foreach ((_, HdrHistogram<T>? histogram) in _children)
+            {
+                if (histogram is not null)
+                    count++;
+            }
+
+            return count;
+        }
+    }
+
+    public override int FootprintInBytes =>
+        (ChildrenCount + 1 /*acc*/ + (_deadAccumulator is null ? 0 : 1)) * _accumulator.FootprintInBytes;
 
     public override void Record(ulong value)
     {
+        // _children1.Value!.Record(value);
         GetLocalHistogram().Record(value);
     }
 
@@ -51,10 +72,14 @@ public sealed partial class ConcurrentHdrHistogram<T> : HdrHistogram
 
     public override void Reset()
     {
-        _accumulator.Reset();
-        foreach ((_, HdrHistogram<T> histogram) in _children)
+        lock (_accumulator)
         {
-            histogram.Reset();
+            _accumulator.Reset();
+            _deadAccumulator = null;
+            foreach ((_, HdrHistogram<T>? histogram) in _children)
+            {
+                histogram?.Reset();
+            }
         }
     }
 }

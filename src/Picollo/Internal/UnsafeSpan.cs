@@ -22,6 +22,9 @@ namespace Picollo.Internal;
 /// </remarks>
 internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
 {
+    internal static readonly nint ArrayOffset = Unsafe.ByteOffset(ref UnsafeSpan.GetDataReference(Array.Empty<T>()),
+        ref Unsafe.As<T, byte>(ref MemoryMarshal.GetArrayDataReference(Array.Empty<T>())));
+
     private readonly object _owner;
     private readonly nint _byteOffset;
     private readonly nint _itemCount;
@@ -39,13 +42,12 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
 
     public UnsafeSpan(T[] array, int itemOffset, int itemCount)
     {
-        ArgumentNullException.ThrowIfNull(array);
-
-        if ((uint)itemOffset > (uint)array.Length || (uint)itemCount > (uint)(array.Length - itemOffset))
-            throw new ArgumentOutOfRangeException(nameof(itemOffset));
+        if ((ulong)(uint)itemOffset + (ulong)(uint)itemCount > (ulong)(uint)array.Length)
+            throw new ArgumentOutOfRangeException();
 
         _owner = array;
-        _byteOffset = Unsafe.ByteOffset(ref RawData.GetDataReference(array), ref Unsafe.As<T, byte>(ref array[itemOffset]));
+        _byteOffset = Unsafe.ByteOffset(ref UnsafeSpan.GetDataReference(array),
+            ref Unsafe.As<T, byte>(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(array), itemOffset)));
         _itemCount = (nint)(uint)itemCount;
     }
 
@@ -57,8 +59,8 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
         if (itemCount < 0)
             throw new ArgumentOutOfRangeException(nameof(itemCount));
 
-        _owner = UnsafeSpanSentinel.Instance;
-        _byteOffset = pointer - (nint)Unsafe.AsPointer(ref RawData.GetDataReference(_owner));
+        _owner = UnsafeSpan.Instance;
+        _byteOffset = pointer - (nint)Unsafe.AsPointer(ref UnsafeSpan.GetDataReference(_owner));
         _itemCount = itemCount;
     }
 
@@ -69,7 +71,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     public ref T DataReference
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => ref Unsafe.As<byte, T>(ref Unsafe.AddByteOffset(ref RawData.GetDataReference(_owner), _byteOffset));
+        get => ref Unsafe.As<byte, T>(ref Unsafe.AddByteOffset(ref UnsafeSpan.GetDataReference(_owner), _byteOffset));
     }
 
     public ref T this[int index]
@@ -97,7 +99,14 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref T GetAtUnsafe(nint index) => ref Unsafe.Add(ref DataReference, index);
+    public ref T GetAtUnsafe(nint index)
+    {
+#if DEBUG
+        return ref this[index];
+#else
+        return ref Unsafe.Add(ref DataReference, index);
+#endif
+    }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -136,7 +145,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
         return new UnsafeSpan<T>(_owner, _byteOffset + Unsafe.SizeOf<T>() * start, length);
     }
 
-    public Span<T> Span => MemoryMarshal.CreateSpan(ref DataReference, (int)_itemCount);
+    public Span<T> AsSpan() => MemoryMarshal.CreateSpan(ref DataReference, (int)_itemCount);
 
     T IReadOnlyList<T>.this[int index] => this[index];
 
@@ -175,17 +184,9 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
         public void Reset() => Index = -1;
         public void Dispose() { }
     }
-
-    private sealed class RawData
-    {
-        private byte _data;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static ref byte GetDataReference(object obj) => ref Unsafe.As<RawData>(obj)._data;
-    }
 }
 
-internal static class UnsafeSpanSentinel
+internal static class UnsafeSpan
 {
     internal static readonly byte[] Instance = GC.AllocateUninitializedArray<byte>(0, pinned: true);
 
@@ -195,5 +196,25 @@ internal static class UnsafeSpanSentinel
     {
         if (Instance.Length != 0)
             throw new ApplicationException();
+    }
+
+    internal sealed class RawData
+    {
+        internal byte _data;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ref byte GetDataReference(object obj) => ref Unsafe.As<RawData>(obj)._data;
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ref T GetAtUnsafe<T>(this T[] array, nuint index)
+    {
+#if DEBUG
+        return ref array[index];
+#else
+        return ref Unsafe.Add(ref Unsafe.As<byte, T>(ref Unsafe.AddByteOffset(ref GetDataReference(array), UnsafeSpan<T>.ArrayOffset)),
+            index);
+#endif
     }
 }
