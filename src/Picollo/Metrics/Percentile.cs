@@ -41,7 +41,7 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
 
         var (start, step) = (Bucket.Start, Bucket.Step);
 
-        if (step != 1)
+        if (step > 1)
         {
             ulong offset;
 

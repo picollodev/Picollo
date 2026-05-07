@@ -200,11 +200,11 @@ internal static class UnsafeSpan
 
     internal sealed class RawData
     {
-        internal byte _data;
+        internal byte Data;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static ref byte GetDataReference(object obj) => ref Unsafe.As<RawData>(obj)._data;
+    public static ref byte GetDataReference(object obj) => ref Unsafe.As<RawData>(obj).Data;
 
     [EditorBrowsable(EditorBrowsableState.Never)]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

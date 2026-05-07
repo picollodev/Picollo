@@ -1,195 +1,70 @@
-using System;
-using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Runtime.CompilerServices;
-using System.Threading;
-using Picollo.Internal;
-
-// ReSharper disable InconsistentNaming
-// ReSharper disable StaticMemberInGenericType
+﻿using System.Numerics;
 
 namespace Picollo.Metrics;
 
-public sealed partial class ConcurrentHdrHistogram<T>
+public sealed partial class ConcurrentHdrHistogram<T> : HdrHistogram
+    where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
-    private static readonly ConcurrentDictionary<int, WeakReference<HdrHistogram<T>?[]?>> KnownSlotsByThreadId = new();
+    // The assumption here is that the is one monitoring thread
 
-    [ThreadStatic]
-    private static ResizeableArray<HdrHistogram<T>?> ts_slots;
-
-    private static readonly List<bool> UsedSlots = new(128);
-
-    private static nuint GetUnusedSlot()
+    public override ulong OverflowCount
     {
-        lock (UsedSlots)
+        get
         {
-            var idx = UsedSlots.IndexOf(false);
-            if (idx < 0)
+            ulong acc = 0ul;
+            foreach (var histogram in _children)
             {
-                idx = UsedSlots.Count;
-                UsedSlots.Add(true);
+                acc += histogram?.OverflowCount ?? 0;
             }
 
-            return (nuint)idx;
+            if (_deadAccumulator is { } da)
+                acc += da.OverflowCount;
+
+            return acc;
         }
     }
 
-    private readonly nuint _slotIndex;
-
-    private (int ThreadId, HdrHistogram<T>? Histogram)[] _children =
-        new (int ThreadId, HdrHistogram<T>? Histogram)[Environment.ProcessorCount];
-
-    private HdrHistogram<T> _accumulator;
-    private HdrHistogram<T>? _deadAccumulator;
-
-    public ConcurrentHdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue) :
-        base(relativeError, minTrackableValue, maxTrackableValue)
+    internal int GetChildrenCount()
     {
-        _slotIndex = GetUnusedSlot();
-        _accumulator = new HdrHistogram<T>(relativeError, minTrackableValue, maxTrackableValue);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private HdrHistogram<T> GetLocalHistogram()
-    {
-        // Here ??= is visibly worse
-        var h = ts_slots.GetRef(_slotIndex);
-        if (h is null)
-            ts_slots.GetRef(_slotIndex) = h = Allocate(Environment.CurrentManagedThreadId);
-        return h;
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private HdrHistogram<T> Allocate(int threadId)
-    {
-        var histogram = new HdrHistogram<T>(_accumulator.RelativeError, _accumulator.MinTrackableValue, _accumulator.MaxTrackableValue);
-
-        if (KnownSlotsByThreadId.TryGetValue(threadId, out WeakReference<HdrHistogram<T>?[]?>? weakReference))
-            weakReference.SetTarget(ts_slots.Data);
-        else
-            KnownSlotsByThreadId[threadId] = new WeakReference<HdrHistogram<T>?[]?>(ts_slots.Data);
-
-        lock (_accumulator)
+        var count = 0;
+        foreach (var histogram in _children)
         {
-            var children = _children;
-            int idx = -1;
-
-            // Scan for dead threads
-            for (int i = 0; i < children.Length; i++)
-            {
-                var (tid, h) = children[i];
-                if (h is null)
-                {
-                    if (idx == -1)
-                        idx = i;
-                    continue;
-                }
-
-                if (!KnownSlotsByThreadId.TryGetValue(tid, out var wr)
-                    || !wr.TryGetTarget(out _))
-                {
-                    // Slots were collected
-                    if(wr is not null)
-                        KnownSlotsByThreadId.TryRemove(tid, out _);
-                    
-                    if (_deadAccumulator is null)
-                        _deadAccumulator = h;
-                    else
-                        _deadAccumulator.Add(h);
-
-                    children[i] = default;
-                    if (idx == -1)
-                        idx = i;
-                }
-            }
-
-            // Scan for threadId match 
-            for (int i = 0; i < children.Length; i++)
-            {
-                var (tid, h) = children[i];
-                if (tid == threadId)
-                {
-                    if (h is not null)
-                    {
-                        if (_deadAccumulator is null)
-                            _deadAccumulator = h;
-                        else
-                            _deadAccumulator.Add(h);
-                    }
-                    else
-                    {
-                        throw new ApplicationException("Found a null histogram with non-zero threadId.");
-                    }
-
-                    idx = i;
-                    break;
-                }
-            }
-
-            if (idx == -1)
-            {
-                idx = children.Length;
-                var newChildren = new (int ThreadId, HdrHistogram<T>? Histogram)[children.Length * 2];
-                children.CopyTo(newChildren);
-                children = _children = newChildren;
-            }
-
-            children[idx] = (threadId, histogram);
+            if (histogram is not null)
+                count++;
         }
 
-        return histogram;
+        return count;
     }
 
-    private void Accumulate()
-    {
-        _accumulator.Reset();
-        foreach ((_, HdrHistogram<T>? histogram) in _children)
-        {
-            if (histogram is null)
-                continue;
-            _accumulator.Add(histogram);
-        }
+    public override int FootprintInBytes =>
+        (GetChildrenCount() + 1 /*acc*/ + (_deadAccumulator is null ? 0 : 1)) * _accumulator.FootprintInBytes;
 
-        if (_deadAccumulator is { } da)
-            _accumulator.Add(da);
+    public override void Record(ulong value)
+    {
+        // _children1.Value!.Record(value);
+        GetLocalHistogram().Record(value);
     }
 
-    private void DoDispose()
+    public override void Record(ulong value, uint count)
     {
-        var accumulator = Interlocked.Exchange(ref _accumulator, null!);
-        if (accumulator == null!)
-            return;
-
-        _deadAccumulator = null;
-        
-        foreach ((int threadId, _) in _children)
-        {
-            if (KnownSlotsByThreadId.TryGetValue(threadId, out var wr))
-            {
-                if (!wr.TryGetTarget(out var threadContainer))
-                {
-                    KnownSlotsByThreadId.TryRemove(threadId, out _);
-                    continue;
-                }
-
-                threadContainer[_slotIndex] = null;
-            }
-        }
-
-        lock (UsedSlots)
-        {
-            UsedSlots[(int)_slotIndex] = false;
-        }
+        GetLocalHistogram().Record(value, count);
     }
 
-    public void Dispose()
+    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default)
     {
-        GC.SuppressFinalize(this);
-        DoDispose();
+        Accumulate();
+        return _accumulator.GetPercentileValue(rank, valueSelection);
     }
 
-    ~ConcurrentHdrHistogram()
+    public override Percentile GetPercentile(double rank)
     {
-        DoDispose();
+        Accumulate();
+        return _accumulator.GetPercentile(rank);
+    }
+
+    public override Bucket GetBucket(ulong value)
+    {
+        Accumulate();
+        return _accumulator.GetBucket(value);
     }
 }

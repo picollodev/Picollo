@@ -2,6 +2,7 @@
 using System.Numerics;
 using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using Picollo.Internal;
 
 namespace Picollo.Metrics;
@@ -18,8 +19,9 @@ namespace Picollo.Metrics;
 public sealed class HdrHistogram<T> : HdrHistogram
     where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
-    internal readonly UnsafeSpan<T> Data;
+    internal UnsafeSpan<T> Data;
     internal T OverflowSlot;
+    internal int OwnerThreadId;
 
     internal HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
@@ -29,7 +31,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
             throw new PlatformNotSupportedException(
                 $"32-bit runtimes are not supported for storage type `{typeof(T).Name}`. Use `Uint32` storage type.");
 
-        Data = new UnsafeSpan<T>(new T[StorageSlotsCount]);
+        Data = new UnsafeSpan<T>(new T[StorageLength]);
     }
 
     /// <summary>
@@ -49,9 +51,28 @@ public sealed class HdrHistogram<T> : HdrHistogram
 
     public override void Reset()
     {
-        Version++;
+        lock (this)
+        {
+            Interlocked.Increment(ref Version);
+            try
+            {
+                Clear();
+            }
+            finally
+            {
+                Interlocked.Increment(ref Version);
+            }
+        }
+    }
+
+    internal void Clear()
+    {
         OverflowSlot = default;
         Data.AsSpan().Clear();
+    }
+
+    public override void Dispose()
+    {
     }
 
     /// <summary>
@@ -92,25 +113,6 @@ public sealed class HdrHistogram<T> : HdrHistogram
         return tValue;
     }
 
-    /// <summary>
-    /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
-    /// <para />
-    /// If this instance is being updated during this call, then the value may be skewed higher.
-    /// If this instance is reset updated during this then this method can throw.
-    /// </summary>
-    /// <param name="rank">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
-    /// <param name="valueSelection"></param>
-    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    /// <exception cref="InvalidOperationException"></exception>
-    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default) =>
-        GetPercentile(rank).GetValue(valueSelection);
-
-    /// <summary>
-    /// Returns a <see cref="Percentile"/> struct with bucket and count details.
-    /// </summary>
-    /// <param name="rank"></param>
-    /// <returns></returns>
-    public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data, null);
 
     /// <summary>
     /// Returns <see cref="Bucket"/> details for the given value.
@@ -136,58 +138,86 @@ public sealed class HdrHistogram<T> : HdrHistogram
     }
 
     /// <summary>
-    /// 
+    /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
+    /// <para />
+    /// If this instance is being updated during this call, then the value may be skewed lower.
+    /// </summary>
+    /// <param name="rank">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
+    /// <param name="valueSelection">A rule to select the equivalent value in a bucket.</param>
+    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
+    /// <exception cref="InvalidOperationException"></exception>
+    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default) =>
+        GetPercentile(rank).GetValue(valueSelection);
+
+    /// <summary>
+    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentiles is found.
     /// </summary>
     /// <param name="rank"></param>
+    /// <returns></returns>
+    public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data);
+
+    /// <summary>
+    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentiles is found.
+    /// </summary>
+    /// <param name="rank">The percentile rank.</param>
     /// <param name="data"></param>
     /// <param name="existingTotalCount"></param>
     /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    /// <exception cref="InvalidOperationException"></exception>
-    internal Percentile GetPercentile(double rank, UnsafeSpan<T> data, ulong? existingTotalCount)
+    internal Percentile GetPercentile(double rank, UnsafeSpan<T> data, ulong? existingTotalCount = null)
     {
-        var totalCount = existingTotalCount.GetValueOrDefault();
-        if (existingTotalCount is null)
+        Percentile percentile;
+        var spinner = new SpinWait();
+        while (true)
         {
-            for (nint i = 0; i < data.LongCount; i++)
+            percentile = default;
+            var version = Volatile.Read(ref Version);
+            if ((version & 1) != 0)
             {
-                T value = data.GetAtUnsafe(i);
-                totalCount += TtoUlong(value);
-            }
-        }
-
-        if (totalCount == 0)
-            return default;
-
-        if (double.IsNaN(rank))
-            rank = 0.0;
-
-        rank = Math.Clamp(rank, 0.0, 100.0);
-
-        ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
-        targetCount = Math.Clamp(targetCount, 1UL, totalCount);
-
-        ulong runningCount = 0;
-
-        for (nint i = 0; i < data.LongCount; i++)
-        {
-            T value = data.GetAtUnsafe(i);
-            ulong count = TtoUlong(value);
-            runningCount += count;
-
-            if (runningCount < targetCount)
+                spinner.SpinOnce();
                 continue;
+            }
 
-            var storageIndex = (nuint)i;
-            var logicalIndex = storageIndex + _firstIndexOffset;
+            var totalCount = existingTotalCount ?? TtoUlong(TensorPrimitives.Sum(data.AsSpan()));
 
-            var (start, step) = _buckets.GetBucketRange(logicalIndex);
+            if (totalCount > 0)
+            {
+                if (double.IsNaN(rank))
+                    rank = 0.0;
 
-            var bucket = new Bucket(start, step, count, (int)storageIndex);
-            var percentile = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
-            return percentile;
+                rank = Math.Clamp(rank, 0.0, 100.0);
+
+                ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
+                targetCount = Math.Clamp(targetCount, 1UL, totalCount);
+
+                ulong runningCount = 0;
+
+                for (nint i = 0; i < data.LongCount; i++)
+                {
+                    T value = data.GetAtUnsafe(i);
+                    ulong count = TtoUlong(value);
+                    runningCount += count;
+
+                    if (runningCount < targetCount)
+                        continue;
+
+                    var storageIndex = (nuint)i;
+                    var logicalIndex = storageIndex + _firstIndexOffset;
+
+                    var (start, step) = _buckets.GetBucketRange(logicalIndex);
+
+                    var bucket = new Bucket(start, step, count, (int)storageIndex);
+
+                    percentile = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
+                    break;
+                }
+            }
+
+            if (version == Volatile.Read(ref Version))
+                break;
+            spinner.Reset();
         }
 
-        throw new InvalidOperationException("Cannot find the requested percentile.");
+        return percentile;
     }
 
     // Bad for public API, this should be exposed on the snapshot

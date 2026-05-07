@@ -8,8 +8,8 @@ internal class Program
     {
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
         
-        HdrHistogramBenches.PicolloBench(20);
-        HdrHistogramBenches.LegacyBench(20);
+        HdrHistogramBenches.PicolloBench(10);
+        HdrHistogramBenches.LegacyBench(10);
         
 
         if (!PerfEventCounterSession.IsSupported)

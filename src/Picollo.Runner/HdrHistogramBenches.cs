@@ -10,7 +10,7 @@ public class HdrHistogramBenches
     private static readonly int RandomPower = 4; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
 
-    private static readonly int Rounds = 100;
+    private static readonly int Rounds = 20;
 
     private static readonly long[] Values = InitValues();
 

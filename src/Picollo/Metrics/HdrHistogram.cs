@@ -2,7 +2,7 @@
 
 namespace Picollo.Metrics;
 
-public abstract class HdrHistogram
+public abstract partial class HdrHistogram : IDisposable
 {
     /// <summary>
     /// Creates a new HdrHistogram backed by uint64 storage counters, the relative precision of 0.001 (3 significant digits) and maxTrackableValue = ulong.MaxValue.
@@ -14,7 +14,7 @@ public abstract class HdrHistogram
 
     private protected readonly HdrBuckets _buckets;
     protected readonly nuint _firstIndexOffset;
-    internal int Version;
+    internal long Version;
     
     public ulong MinTrackableValue { get; protected set; }
     public ulong MaxTrackableValue { get; protected set; }
@@ -29,14 +29,8 @@ public abstract class HdrHistogram
 
         MinTrackableValue = minTrackableValue;
         MaxTrackableValue = maxTrackableValue;
-
-        var totalSlots = _buckets.BlockSize * _buckets.BlockCount;
-
-        // Always compute offsets; for the defaults (min=0, max=ulong.MaxValue) the math yields
-        // firstIndexOffset=0 and lastVirtualIndex=totalSlots-1, so storageSize==totalSlots.
+        
         _firstIndexOffset = _buckets.GetIndex(minTrackableValue);
-        var lastVirtualIndex = (nuint)Math.Min((long)_buckets.GetIndex(maxTrackableValue), totalSlots - 1);
-        var storageSize = (int)(lastVirtualIndex + 1 - _firstIndexOffset);
     }
     
     public double RelativeError => _buckets.RelativeError;
@@ -46,7 +40,7 @@ public abstract class HdrHistogram
     /// <summary>
     /// The number of counters available in the backing storage.
     /// </summary>
-    internal int StorageSlotsCount
+    internal int StorageLength
     {
         get
         {
@@ -98,4 +92,5 @@ public abstract class HdrHistogram
     public abstract Bucket GetBucket(ulong value);
 
     public abstract void Reset();
+    public abstract void Dispose();
 }

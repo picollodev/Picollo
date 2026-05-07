@@ -6,7 +6,7 @@ namespace Picollo.Metrics;
 public class HdrHistogramSnapshot<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
     public HdrHistogram<T> Histogram { get; }
-    private int _version;
+    private long _version;
     public DateTime Timestamp { get; private set; }
 
     public HdrHistogramSnapshot(HdrHistogram<T> histogram)
