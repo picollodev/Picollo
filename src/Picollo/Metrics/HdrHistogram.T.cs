@@ -86,7 +86,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
     public override void Record(ulong value, uint count) => GetRef(value) += UlongToT(count);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static ulong TtoUlong(T value)
+    internal static ulong TtoUlong(T value)
     {
         ulong longValue;
         if (typeof(T) == typeof(uint))
@@ -100,7 +100,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static T UlongToT(ulong value)
+    internal static T UlongToT(ulong value)
     {
         T tValue;
         if (typeof(T) == typeof(uint))
@@ -112,7 +112,6 @@ public sealed class HdrHistogram<T> : HdrHistogram
 
         return tValue;
     }
-
 
     /// <summary>
     /// Returns <see cref="Bucket"/> details for the given value.
@@ -134,6 +133,18 @@ public sealed class HdrHistogram<T> : HdrHistogram
         var storageIndex = _buckets.GetIndex(value) - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
             return ref OverflowSlot;
+        
+        return ref Data.GetAtUnsafe(storageIndex);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal ref T GetRefVolatile(ulong value)
+    {
+        var storageIndex = _buckets.GetIndex(value) - _firstIndexOffset;
+        if (storageIndex >= (nuint)Data.LongCount)
+            return ref OverflowSlot;
+        
+        Volatile.ReadBarrier();
         return ref Data.GetAtUnsafe(storageIndex);
     }
 
@@ -175,6 +186,21 @@ public sealed class HdrHistogram<T> : HdrHistogram
             {
                 spinner.SpinOnce();
                 continue;
+            }
+
+            if (typeof(T) == typeof(uint) && !existingTotalCount.HasValue)
+            {
+                // TensorPrimitives.Sum can overflow for uint storage quite easily
+                
+                ulong total = 0L;
+                for (nint i = 0; i < data.LongCount; i++)
+                {
+                    T value = data.GetAtUnsafe(i);
+                    ulong count = TtoUlong(value);
+                    total += count;
+                }
+
+                existingTotalCount = total;
             }
 
             var totalCount = existingTotalCount ?? TtoUlong(TensorPrimitives.Sum(data.AsSpan()));

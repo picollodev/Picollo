@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Text;
 using HdrHistogram;
 using Picollo.Metrics;
 
@@ -10,7 +11,7 @@ public class HdrHistogramBenches
     private static readonly int RandomPower = 4; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
 
-    private static readonly int Rounds = 20;
+    private static readonly int Rounds = 100;
 
     private static readonly long[] Values = InitValues();
 
@@ -60,12 +61,11 @@ public class HdrHistogramBenches
             Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
 
-
         using (h.GetTickScope())
         {
             // work
         }
-        
+
         var p999 = h.GetPercentile(99.9);
 
         var p999Value = p999.Value;
@@ -160,5 +160,74 @@ public class HdrHistogramBenches
         Console.WriteLine($"Target: {(1UL << 41) + 1:N0}");
         Console.WriteLine($"Expected P90: {(1UL << 41) + (1UL << 31) - 1:N0}");
         Console.WriteLine($"Actual P90: {p90:N0}");
+    }
+
+    private static double _value;
+
+    public static void DetectStaleMultiplyStore(int seconds = 2)
+    {
+        Console.OutputEncoding = System.Text.Encoding.UTF8;
+
+        double maxBadSeen = 0;
+        double expectedSign = 1;
+        int bad = 0;
+
+        long iterations = 1000_000;
+        var rounds = 0;
+        Console.Write($"Running for {seconds} seconds");
+        var cts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
+
+        var mre = new ManualResetEvent(false);
+
+        Task cleaner = Task.Factory.StartNew(() =>
+        {
+            mre.Set();
+
+            var sw = Stopwatch.StartNew();
+            var elapsed = sw.Elapsed;
+            while (!cts.IsCancellationRequested)
+            {
+                rounds++;
+                for (long i = 0; i < iterations; i++)
+                {
+                    expectedSign = -expectedSign;
+
+                    _value = expectedSign;
+                    var seen = Volatile.Read(ref _value);
+
+                    if ((seen < 0) != (expectedSign < 0))
+                    {
+                        if (Math.Abs(seen) > maxBadSeen)
+                            maxBadSeen = Math.Abs(seen);
+                        // Console.WriteLine($"Bad {bad}, seen {seen:N0}, expected {expectedSign} in {sw.Elapsed.TotalMicroseconds:N0}");
+                        bad++;
+                    }
+                }
+
+                if (sw.Elapsed - elapsed >= TimeSpan.FromSeconds(1))
+                {
+                    Console.Write(".");
+                    elapsed = sw.Elapsed;
+                }
+            }
+
+        }, TaskCreationOptions.LongRunning);
+
+        mre.WaitOne();
+
+        while (!cts.IsCancellationRequested)
+        {
+            var c = 1.000001;
+            for (long i = 0; i < iterations; i++)
+            {
+                _value *= c; // load, multiply, store
+            }
+        }
+
+        cleaner.Wait();
+        Console.WriteLine();
+        Console.WriteLine($"iterations: {rounds * iterations:N0}");
+        Console.WriteLine($"bad signs:  {bad:N0}");
+        Console.WriteLine($"max bad seen:  {maxBadSeen:N0}");
     }
 }

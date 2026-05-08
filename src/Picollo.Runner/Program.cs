@@ -7,7 +7,9 @@ internal class Program
     public static void Main(string[] args)
     {
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
-        
+
+        // HdrHistogramBenches.DetectStaleMultiplyStore();
+        // return;
         HdrHistogramBenches.PicolloBench(10);
         HdrHistogramBenches.LegacyBench(10);
         

@@ -12,6 +12,69 @@ using Picollo.Internal;
 
 namespace Picollo.Metrics;
 
+/*
+Reset() clears TLS slots first
+marks child histograms NeedsReset
+Accumulate() skips NeedsReset
+owner thread clears and reactivates its own child on reacquire
+OverflowCount goes through Accumulate() / _accumulator
+Dispose() clears TLS first, then does a final accumulate, then clears _children
+
+-----------------------------------------------
+
+// TODO Reset should be a logical generation cut, not an in-place clear.
+// TODO Add per-child NeedsReset state.
+// TODO In Reset(): clear this histogram's TLS slots first, then mark rooted children NeedsReset, then clear _deadAccumulator and _accumulator.
+// TODO Do not clear child storage inside Reset(); owner thread should clear on first reuse.
+// TODO In Accumulate(): skip children with NeedsReset.
+// TODO On TLS miss, try to find existing child by OwnerThreadId before allocating a new one.
+// TODO If matching child has NeedsReset, clear it on owner thread, unset NeedsReset, reinstall into TLS, and reuse it.
+// TODO Dead-thread retirement: if child.NeedsReset, unlink without merging; otherwise merge into _deadAccumulator.
+// TODO Use the same structural sync for Reset/reuse/retirement because they all mutate _children and child state.
+// TODO OverflowCount should use Accumulate() / _accumulator, same as other reads.
+// TODO Dispose order: clear TLS slots, do final Accumulate(), then clear _children and _deadAccumulator.
+
+-----------------------------------------------
+
+Reset() TODOs for HdrHistogram.Concurrent.Tls.cs
+
+Change OverflowCount to use Accumulate() and read from _accumulator, so overflow follows the same consistency rules as percentile reads.
+
+Introduce a per-child NeedsReset flag on HdrHistogram<T> or equivalent side metadata.
+
+Rework Reset() to be a logical generation cut, not an in-place data clear:
+
+clear this histogram’s TLS slot from every known thread container first
+mark all currently rooted children as NeedsReset = true
+clear _deadAccumulator
+clear _accumulator
+do not clear child storage in Reset() itself
+Make Accumulate() skip children marked NeedsReset, so old-generation data is excluded immediately after reset.
+
+Rework Allocate() / reacquire path:
+
+after TLS miss, look for an existing child with matching OwnerThreadId before allocating
+if found and NeedsReset, clear it on the owner thread, set NeedsReset = false, reinstall into TLS, and reuse it
+allocate a new child only if no reusable child exists
+Update dead-thread retirement logic in Allocate():
+
+if a dead child has NeedsReset == true, unlink it without merging to _deadAccumulator
+otherwise unlink it and merge to _deadAccumulator
+Use structural synchronization consistently on this for reset/reacquire/dead-thread retirement, since those all mutate _children, TLS membership, and reset state.
+
+Keep Dispose() finalization order as:
+
+detach TLS slots first
+final Accumulate()
+clear _children
+clear _deadAccumulator
+That preserves as much still-rooted data as possible before teardown.
+Add a short invariant comment near NeedsReset:
+
+NeedsReset means “detached old-generation child; exclude from accumulation until its owner thread clears and reactivates it.”
+
+*/
+
 public sealed partial class ConcurrentHdrHistogram<T>
 {
     private static readonly ConcurrentDictionary<int, WeakReference<HdrHistogram<T>?[]?>> KnownSlotsByThreadId = new();
@@ -39,7 +102,7 @@ public sealed partial class ConcurrentHdrHistogram<T>
     private HdrHistogram<T> GetLocalHistogram()
     {
         // Here ??= is visibly worse
-        var h = ts_slots.GetRef(_tlsIndex);
+        var h = Volatile.Read(ref ts_slots.GetRef(_tlsIndex));
         if (h is null)
             ts_slots.GetRef(_tlsIndex) = h = Allocate(Environment.CurrentManagedThreadId);
         return h;
