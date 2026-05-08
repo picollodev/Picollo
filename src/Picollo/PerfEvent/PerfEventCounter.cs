@@ -27,7 +27,7 @@ public class PerfEventCounter
         Config = config;
     }
 
-    internal HdrHistogram<uint>? PairReadOverheadHistogram = new HdrHistogram<uint>(0.01, 0, 100_000);
+    internal UInt32HdrHistogram? PairReadOverheadHistogram = new UInt32HdrHistogram(0.01, 0, 100_000);
 
     /// <summary>
     /// Estimated overhead between two consecutive calls to <see cref="PerfEventCounterSession.Read"/>.

@@ -77,9 +77,14 @@ NeedsReset means “detached old-generation child; exclude from accumulation unt
 
 public sealed partial class ConcurrentHdrHistogram<T>
 {
-    private static readonly ConcurrentDictionary<int, WeakReference<HdrHistogram<T>?[]?>> KnownSlotsByThreadId = new();
+    internal struct HistogramSlot
+    {
+        internal volatile HdrHistogram<T>? Value;
+    }
 
-    [ThreadStatic] private static TlsStorage ts_slots;
+    private static readonly ConcurrentDictionary<int, WeakReference<HistogramSlot[]?>> KnownSlotsByThreadId = new();
+
+    [ThreadStatic] private static HistogramSlot[]? ts_slots;
 
     private static readonly List<bool> UsedTlsIndices = new(128);
 
@@ -101,11 +106,56 @@ public sealed partial class ConcurrentHdrHistogram<T>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private HdrHistogram<T> GetLocalHistogram()
     {
-        // Here ??= is visibly worse
-        var h = Volatile.Read(ref ts_slots.GetRef(_tlsIndex));
-        if (h is null)
-            ts_slots.GetRef(_tlsIndex) = h = Allocate(Environment.CurrentManagedThreadId);
-        return h;
+        HistogramSlot[]? slots = ts_slots;
+        HdrHistogram<T>? histogram;
+        int index = _tlsIndex;
+
+        if (slots != null
+            && index >= 0
+            && index < slots.Length
+            && (histogram = slots[index].Value) != null)
+        {
+            return histogram;
+        }
+
+        return GetLocalHistogramSlow();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public void EnsureCapacityForIndex(nint index)
+    {
+        if (index < 0)
+            throw new ObjectDisposedException(typeof(T).Name);
+
+        nuint capacity = (nuint)index + 1;
+
+        HistogramSlot[]? storage = ts_slots;
+
+        if (storage is null || capacity > (nuint)storage.LongLength)
+        {
+            var newStorage = new HistogramSlot[BitOperations.RoundUpToPowerOf2((ulong)capacity)];
+
+            if (storage is not null)
+                storage.AsSpan().CopyTo(newStorage.AsSpan().Slice(0, storage.Length));
+
+            ts_slots = newStorage;
+            // _length = (nuint)newStorage.LongLength;
+
+            if (KnownSlotsByThreadId.TryGetValue(Environment.CurrentManagedThreadId,
+                    out WeakReference<HistogramSlot[]?>? wr))
+                wr.SetTarget(newStorage);
+            else
+                KnownSlotsByThreadId[Environment.CurrentManagedThreadId] = new WeakReference<HistogramSlot[]?>(newStorage);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private HdrHistogram<T> GetLocalHistogramSlow()
+    {
+        int index = _tlsIndex;
+        EnsureCapacityForIndex(index);
+
+        return ts_slots![index].Value ??= Allocate(Environment.CurrentManagedThreadId);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -185,7 +235,7 @@ public sealed partial class ConcurrentHdrHistogram<T>
                 {
                     OwnerThreadId = threadId
                 };
-                
+
                 children[idx] = histogram;
                 return histogram;
             }
@@ -344,7 +394,7 @@ public sealed partial class ConcurrentHdrHistogram<T>
                         continue;
                     }
 
-                    threadContainer[tlsIndex] = null;
+                    threadContainer[tlsIndex].Value = null;
                 }
             }
 
@@ -365,56 +415,4 @@ public sealed partial class ConcurrentHdrHistogram<T>
     }
 
     ~ConcurrentHdrHistogram() => DoDispose();
-
-    internal struct TlsStorage
-    {
-        private HdrHistogram<T>?[]? _data;
-        private nuint _length;
-
-        public HdrHistogram<T>?[]? Data => _data;
-        public nuint Length => _length;
-
-        [MethodImpl(MethodImplOptions.NoInlining)]
-        public void EnsureCapacityForIndex(nint index)
-        {
-            if (index < 0)
-                throw new ObjectDisposedException(typeof(T).Name);
-
-            nuint capacity = (nuint)index + 1;
-
-            HdrHistogram<T>?[]? storage = _data;
-
-            if (storage is null || capacity > (nuint)storage.LongLength)
-            {
-                var newStorage = new HdrHistogram<T>?[BitOperations.RoundUpToPowerOf2((ulong)capacity)];
-
-                if (storage is not null)
-                    storage.AsSpan().CopyTo(newStorage.AsSpan().Slice(0, storage.Length));
-
-                _data = newStorage;
-                _length = (nuint)newStorage.LongLength;
-
-                if (KnownSlotsByThreadId.TryGetValue(Environment.CurrentManagedThreadId, out WeakReference<HdrHistogram<T>?[]?>? wr))
-                    wr.SetTarget(newStorage);
-                else
-                    KnownSlotsByThreadId[Environment.CurrentManagedThreadId] = new WeakReference<HdrHistogram<T>?[]?>(newStorage);
-            }
-        }
-
-        /// <summary>
-        /// Get an item at <paramref name="index"/> without bound checks.
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref HdrHistogram<T>? GetRef(nint index)
-        {
-            if ((uint)index >= Length)
-                EnsureCapacityForIndex(index);
-
-#if DEBUG
-            return ref _data![index];
-#else
-            return ref _data!.GetAtUnsafe((nuint)index);
-#endif
-        }
-    }
 }

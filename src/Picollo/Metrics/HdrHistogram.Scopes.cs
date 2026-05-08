@@ -3,6 +3,8 @@ using System.Diagnostics;
 
 namespace Picollo.Metrics;
 
+// TODO Reference OneSecondValue comment to WithMaxTrackableValue when factory is done
+
 /// <summary>
 /// A <c>using</c>-pattern scope that measures elapsed <see cref="Stopwatch"/> ticks from construction to
 /// <see cref="Dispose"/> and records the value into a histogram.
@@ -46,7 +48,7 @@ public struct NanoScope : IDisposable
     /// Use a multiple of this for defining <see cref="HdrHistogram.MaxTrackableValue"/> when creating a histogram
     /// intended to track durations in nanoseconds.
     /// </summary>
-    public static ulong OneSecondValue => 1_000_000_000UL;
+    public const ulong OneSecondValue = 1_000_000_000UL;
 
     public NanoScope(HdrHistogram histogram)
     {
@@ -76,7 +78,7 @@ public struct MicroScope : IDisposable
     /// Use a multiple of this for defining <see cref="HdrHistogram.MaxTrackableValue"/> when creating a histogram
     /// intended to track durations in microseconds.
     /// </summary>
-    public static ulong OneSecondValue => 1_000_000UL;
+    public const ulong OneSecondValue = 1_000_000UL;
 
     public MicroScope(HdrHistogram histogram)
     {
@@ -106,7 +108,7 @@ public struct MilliScope : IDisposable
     /// Use a multiple of this for defining <see cref="HdrHistogram.MaxTrackableValue"/> when creating a histogram
     /// intended to track durations in milliseconds.
     /// </summary>
-    public static ulong OneSecondValue => 1_000UL;
+    public const ulong OneSecondValue = 1_000UL;
 
     public MilliScope(HdrHistogram histogram)
     {

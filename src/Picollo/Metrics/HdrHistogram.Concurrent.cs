@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Picollo.Metrics;
 
@@ -39,9 +40,12 @@ public sealed partial class ConcurrentHdrHistogram<T> : HdrHistogram
     public override int FootprintInBytes =>
         (GetChildrenCount() + 1 /*acc*/ + (_deadAccumulator is null ? 0 : 1)) * _accumulator.FootprintInBytes;
 
-    public override void Record(ulong value) => GetLocalHistogram().GetRefVolatile(value)++;
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void Record(ulong value) => GetLocalHistogram().Record(value);
 
-    public override void Record(ulong value, uint count) => GetLocalHistogram().GetRefVolatile(value) += HdrHistogram<T>.UlongToT(count);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void Record(ulong value, uint count) => GetLocalHistogram().Record(value, count);
 
     public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default)
     {

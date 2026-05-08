@@ -7,9 +7,10 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private const long MaxValue = 7716549600; // 1000_000_000L * 3600;
+    private static readonly long MaxValue = (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 4; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
+    private static readonly bool UseDoublePrecision = false; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
 
     private static readonly int Rounds = 100;
 
@@ -31,14 +32,8 @@ public class HdrHistogramBenches
         return values;
     }
 
-    public static void PicolloBench(int runs = 10)
+    private static void PicolloWorkload(Metrics.HdrHistogram h, int runs, int threadId = 0)
     {
-        Console.WriteLine("# Picollo HdrHistogram");
-
-        var h = new ConcurrentHdrHistogram<uint>(0.5 / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
-
-        Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
-
         var sw = Stopwatch.StartNew();
 
         for (int x = 0; x < runs; x++)
@@ -58,32 +53,73 @@ public class HdrHistogramBenches
             var totalOps = Rounds * Values.Length;
             var elapsed = sw.Elapsed;
             var perOp = elapsed.TotalNanoseconds / totalOps;
-            Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} ns");
+            Console.WriteLine($"[{threadId}] Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
+    }
 
-        using (h.GetTickScope())
-        {
-            // work
-        }
+    public static void PicolloBench(int runs = 10)
+    {
+        Console.WriteLine("# Picollo HdrHistogram");
+        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
+        Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
 
-        var p999 = h.GetPercentile(99.9);
-
-        var p999Value = p999.Value;
-
-        Console.WriteLine($"P99.9: {p999Value:N0}");
+        PicolloWorkload(h, runs);
 
         Console.WriteLine(
             $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
-
         Console.WriteLine();
     }
 
-    public static void LegacyBench(int runs = 10)
+    public static void PicolloConcurrentBench(int runs = 10, int threads = 2, bool threadLocal = false, ulong? maxValue = null)
     {
-        Console.WriteLine("# Legacy HdrHistogram");
+        Console.WriteLine($"# PicolloConcurrentBench: {(threadLocal ? "thread-local" : "interlocked")}");
+        Metrics.HdrHistogram h =
+            threadLocal
+                ? new ConcurrentHdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue)
+                : new InterlockedUInt32HdrHistogram((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue);
 
-        var h = new IntConcurrentHistogram(1, MaxValue, SignificantDigits);
-        Console.WriteLine($"Footprint in bytes: {h.GetEstimatedFootprintInBytes():N0}");
+        if (!threadLocal)
+            Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
+
+        var mre = new ManualResetEvent(false);
+        List<Task> tasks = new();
+        var finished = 0;
+        for (int i = 0; i < threads; i++)
+        {
+            var threadId = i;
+            var t = Task.Factory.StartNew(() =>
+            {
+                mre.WaitOne();
+
+                PicolloWorkload(h, runs, threadId);
+
+                if (Interlocked.Increment(ref finished) == threads)
+                {
+                    Console.WriteLine(
+                        $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
+
+                    if (threadLocal)
+                        Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
+                }
+            }, TaskCreationOptions.LongRunning);
+            tasks.Add(t);
+        }
+
+        Thread.Sleep(1000);
+        mre.Set();
+        Task.WaitAll(tasks);
+        Console.WriteLine();
+    }
+
+    public static void PicolloThreadLocalBench(int runs = 10)
+    {
+        Console.WriteLine("# PicolloThreadLocalBench");
+
+        var hStorage = new ThreadLocal<HdrHistogram<uint>>(() =>
+            new HdrHistogram<uint>(0.5 / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue));
+        var h = hStorage.Value!;
+
+        Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
 
         var sw = Stopwatch.StartNew();
 
@@ -95,7 +131,7 @@ public class HdrHistogramBenches
             {
                 foreach (long value in Values)
                 {
-                    h.RecordValue(value);
+                    hStorage.Value!.Record((ulong)value);
                 }
             }
 
@@ -107,13 +143,86 @@ public class HdrHistogramBenches
             Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
 
-        var p999Count = h.GetCountAtValue(h.GetValueAtPercentile(99.9));
-        var p999Value = h.GetValueAtPercentile(99.9);
+        Console.WriteLine(
+            $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
+        Console.WriteLine();
+    }
 
-        Console.WriteLine($"P99.9: {p999Value:N0}");
+    private static void LegacyWorkload(HistogramBase h, int runs, int threadId = 0)
+    {
+        var sw = Stopwatch.StartNew();
+        int rounds = (Rounds / 10);
+
+        for (int x = 0; x < runs; x++)
+        {
+            sw.Restart();
+
+
+            for (int r = 0; r < rounds; r++)
+            {
+                foreach (long value in Values)
+                {
+                    h.RecordValue(value);
+                }
+            }
+
+            sw.Stop();
+
+            var totalOps = (Rounds / 10) * Values.Length;
+            var elapsed = sw.Elapsed;
+            var perOp = elapsed.TotalNanoseconds / totalOps;
+            Console.WriteLine($"[{threadId}] Elapsed: {elapsed}, perOp: {perOp:N2} ns");
+        }
+    }
+
+    public static void LegacyBench(int runs = 10)
+    {
+        Console.WriteLine("# LegacyBench");
+
+        var h = new IntHistogram(1, MaxValue, SignificantDigits);
+        Console.WriteLine($"Footprint in bytes: {h.GetEstimatedFootprintInBytes():N0}");
+
+        LegacyWorkload(h, runs);
 
         Console.WriteLine(
             $"Percentiles: P1 {h.GetValueAtPercentile(1):N0}, P50 {h.GetValueAtPercentile(50):N0}, P90 {h.GetValueAtPercentile(90):N0}, P99 {h.GetValueAtPercentile(99):N0}, P99.9 {h.GetValueAtPercentile(99.9):N0}");
+        Console.WriteLine();
+    }
+
+    public static void LegacyConcurrentBench(int runs = 10, int threads = 2)
+    {
+        Console.WriteLine("# LegacyConcurrentBench");
+        var h = new IntConcurrentHistogram(1, MaxValue, 3);
+        Console.WriteLine($"Footprint in bytes: {h.GetEstimatedFootprintInBytes():N0}");
+
+        var mre = new ManualResetEvent(false);
+        List<Task> tasks = new();
+        var finished = 0;
+        for (int i = 0; i < threads; i++)
+        {
+            var threadId = i;
+            var t = Task.Factory.StartNew(() =>
+            {
+                mre.WaitOne();
+
+                LegacyWorkload(h, runs, threadId);
+
+                if (Interlocked.Increment(ref finished) == threads)
+                {
+                    var p999Value = h.GetValueAtPercentile(99.9);
+                    Console.WriteLine($"P99.9: {p999Value:N0}");
+
+                    Console.WriteLine(
+                        $"Percentiles: P1 {h.GetValueAtPercentile(1):N0}, P50 {h.GetValueAtPercentile(50):N0}, P90 {h.GetValueAtPercentile(90):N0}, P99 {h.GetValueAtPercentile(99):N0}, P99.9 {h.GetValueAtPercentile(99.9):N0}");
+                }
+            }, TaskCreationOptions.LongRunning);
+            tasks.Add(t);
+        }
+
+        Thread.Sleep(1000);
+        mre.Set();
+        Task.WaitAll(tasks);
+        Console.WriteLine();
     }
 
     // https://github.com/HdrHistogram/HdrHistogram.NET/pull/169
@@ -210,14 +319,13 @@ public class HdrHistogramBenches
                     elapsed = sw.Elapsed;
                 }
             }
-
         }, TaskCreationOptions.LongRunning);
 
         mre.WaitOne();
 
         while (!cts.IsCancellationRequested)
         {
-            var c = 1.000001;
+            var c = 1.00001;
             for (long i = 0; i < iterations; i++)
             {
                 _value *= c; // load, multiply, store

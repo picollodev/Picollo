@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using Picollo.PerfEvent;
-using Picollo.Runner;
+
+namespace Picollo.Runner;
 
 internal class Program
 {
@@ -8,11 +9,20 @@ internal class Program
     {
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
 
-        // HdrHistogramBenches.DetectStaleMultiplyStore();
-        // return;
-        HdrHistogramBenches.PicolloBench(10);
-        HdrHistogramBenches.LegacyBench(10);
-        
+        var runs = 10;
+        var threads = 4;
+
+        HdrHistogramBenches.PicolloBench(runs);
+        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
+        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
+        HdrHistogramBenches.LegacyBench(runs);
+        HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
+
+        return;
+
+        HdrHistogramBenches.DetectStaleMultiplyStore();
+        return;
+
 
         if (!PerfEventCounterSession.IsSupported)
         {

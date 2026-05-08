@@ -15,23 +15,25 @@ namespace Picollo.Metrics;
 /// Reads during updates should return usable but imprecise results.
 /// Hot concurrent writes can lose some updates, especially for hot buckets with typical values, and can badly affect the writer thread performance due to false sharing. 
 /// </remarks>
-/// <typeparam name="T">The backing storage type for counters. Only <see cref="uint"/> and <see cref="ulong"/> are supported.</typeparam>
-public sealed class HdrHistogram<T> : HdrHistogram
-    where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
+/// <typeparam name="TCounter">The backing storage type for counters. Only <see cref="uint"/> and <see cref="ulong"/> are supported.</typeparam>
+/// <typeparam name="TAddition"></typeparam>
+public class HdrHistogram<TCounter, TAddition> : HdrHistogram
+    where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>
+    where TAddition : struct, IAddition
 {
-    internal UnsafeSpan<T> Data;
-    internal T OverflowSlot;
+    internal UnsafeSpan<TCounter> Data;
+    internal TCounter OverflowSlot;
     internal int OwnerThreadId;
 
     internal HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
         // Only uint and ulong backing counter storage is supported initially
-        if (Unsafe.SizeOf<T>() >= 8 && nint.Size < 8)
+        if (Unsafe.SizeOf<TCounter>() >= 8 && nint.Size < 8)
             throw new PlatformNotSupportedException(
-                $"32-bit runtimes are not supported for storage type `{typeof(T).Name}`. Use `Uint32` storage type.");
+                $"32-bit runtimes are not supported for storage type `{typeof(TCounter).Name}`. Use `Uint32` storage type.");
 
-        Data = new UnsafeSpan<T>(new T[StorageLength]);
+        Data = new UnsafeSpan<TCounter>(new TCounter[StorageLength]);
     }
 
     /// <summary>
@@ -45,7 +47,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
         + 24 // Array obj header + dim + count
         + 8 + 8 + 8 // Data
         + 4 + 4 + 4 // Buckets
-        + Unsafe.SizeOf<T>() // Overflow counter
+        + Unsafe.SizeOf<TCounter>() // Overflow counter
         + 8 // MaxTrackableValue
     ;
 
@@ -78,40 +80,12 @@ public sealed class HdrHistogram<T> : HdrHistogram
     /// <summary>
     /// Record a single observation of the <paramref name="value"/>.
     /// </summary>
-    public override void Record(ulong value) => GetRef(value)++;
+    public sealed override void Record(ulong value) => TAddition.Increment(ref GetRef(value));
 
     /// <summary>
     /// Record <paramref name="count"/> observations of the <paramref name="value"/>.
     /// </summary>
-    public override void Record(ulong value, uint count) => GetRef(value) += UlongToT(count);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static ulong TtoUlong(T value)
-    {
-        ulong longValue;
-        if (typeof(T) == typeof(uint))
-            longValue = (uint)(object)value;
-        else if (typeof(T) == typeof(ulong))
-            longValue = (ulong)(object)value;
-        else
-            throw new NotSupportedException("Supported storage types are only uint and ulong");
-
-        return longValue;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal static T UlongToT(ulong value)
-    {
-        T tValue;
-        if (typeof(T) == typeof(uint))
-            tValue = (T)(object)checked((uint)value);
-        else if (typeof(T) == typeof(ulong))
-            tValue = (T)(object)value;
-        else
-            throw new NotSupportedException("Supported storage types are only uint and ulong");
-
-        return tValue;
-    }
+    public sealed override void Record(ulong value, uint count) => TAddition.Add(ref GetRef(value), UlongToT<TCounter>(count));
 
     /// <summary>
     /// Returns <see cref="Bucket"/> details for the given value.
@@ -128,23 +102,16 @@ public sealed class HdrHistogram<T> : HdrHistogram
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ref T GetRef(ulong value)
+    internal ref TCounter GetRef(ulong value)
     {
         var storageIndex = _buckets.GetIndex(value) - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
             return ref OverflowSlot;
-        
-        return ref Data.GetAtUnsafe(storageIndex);
-    }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal ref T GetRefVolatile(ulong value)
-    {
-        var storageIndex = _buckets.GetIndex(value) - _firstIndexOffset;
-        if (storageIndex >= (nuint)Data.LongCount)
-            return ref OverflowSlot;
-        
-        Volatile.ReadBarrier();
+
+        // TODO Remove this when thread-local cleans its own storage after reset
+        if (typeof(TAddition) == typeof(VolatileAddition))
+            Volatile.ReadBarrier();
+
         return ref Data.GetAtUnsafe(storageIndex);
     }
 
@@ -174,7 +141,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
     /// <param name="data"></param>
     /// <param name="existingTotalCount"></param>
     /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    internal Percentile GetPercentile(double rank, UnsafeSpan<T> data, ulong? existingTotalCount = null)
+    internal Percentile GetPercentile(double rank, UnsafeSpan<TCounter> data, ulong? existingTotalCount = null)
     {
         Percentile percentile;
         var spinner = new SpinWait();
@@ -188,14 +155,14 @@ public sealed class HdrHistogram<T> : HdrHistogram
                 continue;
             }
 
-            if (typeof(T) == typeof(uint) && !existingTotalCount.HasValue)
+            if (typeof(TCounter) == typeof(uint) && !existingTotalCount.HasValue)
             {
                 // TensorPrimitives.Sum can overflow for uint storage quite easily
-                
+
                 ulong total = 0L;
                 for (nint i = 0; i < data.LongCount; i++)
                 {
-                    T value = data.GetAtUnsafe(i);
+                    TCounter value = data.GetAtUnsafe(i);
                     ulong count = TtoUlong(value);
                     total += count;
                 }
@@ -219,7 +186,7 @@ public sealed class HdrHistogram<T> : HdrHistogram
 
                 for (nint i = 0; i < data.LongCount; i++)
                 {
-                    T value = data.GetAtUnsafe(i);
+                    TCounter value = data.GetAtUnsafe(i);
                     ulong count = TtoUlong(value);
                     runningCount += count;
 
@@ -247,9 +214,9 @@ public sealed class HdrHistogram<T> : HdrHistogram
     }
 
     // Bad for public API, this should be exposed on the snapshot
-    internal void Add(HdrHistogram<T> other)
+    internal void Add(HdrHistogram<TCounter> other)
     {
-        OverflowSlot += UlongToT(other.OverflowCount);
+        OverflowSlot += UlongToT<TCounter>(other.OverflowCount);
         TensorPrimitives.Add(other.Data.AsSpan(), Data.AsSpan(), Data.AsSpan());
     }
 }
