@@ -5,77 +5,13 @@ using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Picollo.Internal;
 
 // ReSharper disable InconsistentNaming
-// ReSharper disable StaticMemberInGenericType
 
 namespace Picollo.Metrics;
 
-/*
-Reset() clears TLS slots first
-marks child histograms NeedsReset
-Accumulate() skips NeedsReset
-owner thread clears and reactivates its own child on reacquire
-OverflowCount goes through Accumulate() / _accumulator
-Dispose() clears TLS first, then does a final accumulate, then clears _children
-
------------------------------------------------
-
-// TODO Reset should be a logical generation cut, not an in-place clear.
-// TODO Add per-child NeedsReset state.
-// TODO In Reset(): clear this histogram's TLS slots first, then mark rooted children NeedsReset, then clear _deadAccumulator and _accumulator.
-// TODO Do not clear child storage inside Reset(); owner thread should clear on first reuse.
-// TODO In Accumulate(): skip children with NeedsReset.
-// TODO On TLS miss, try to find existing child by OwnerThreadId before allocating a new one.
-// TODO If matching child has NeedsReset, clear it on owner thread, unset NeedsReset, reinstall into TLS, and reuse it.
-// TODO Dead-thread retirement: if child.NeedsReset, unlink without merging; otherwise merge into _deadAccumulator.
-// TODO Use the same structural sync for Reset/reuse/retirement because they all mutate _children and child state.
-// TODO OverflowCount should use Accumulate() / _accumulator, same as other reads.
-// TODO Dispose order: clear TLS slots, do final Accumulate(), then clear _children and _deadAccumulator.
-
------------------------------------------------
-
-Reset() TODOs for HdrHistogram.Concurrent.Tls.cs
-
-Change OverflowCount to use Accumulate() and read from _accumulator, so overflow follows the same consistency rules as percentile reads.
-
-Introduce a per-child NeedsReset flag on HdrHistogram<T> or equivalent side metadata.
-
-Rework Reset() to be a logical generation cut, not an in-place data clear:
-
-clear this histogram’s TLS slot from every known thread container first
-mark all currently rooted children as NeedsReset = true
-clear _deadAccumulator
-clear _accumulator
-do not clear child storage in Reset() itself
-Make Accumulate() skip children marked NeedsReset, so old-generation data is excluded immediately after reset.
-
-Rework Allocate() / reacquire path:
-
-after TLS miss, look for an existing child with matching OwnerThreadId before allocating
-if found and NeedsReset, clear it on the owner thread, set NeedsReset = false, reinstall into TLS, and reuse it
-allocate a new child only if no reusable child exists
-Update dead-thread retirement logic in Allocate():
-
-if a dead child has NeedsReset == true, unlink it without merging to _deadAccumulator
-otherwise unlink it and merge to _deadAccumulator
-Use structural synchronization consistently on this for reset/reacquire/dead-thread retirement, since those all mutate _children, TLS membership, and reset state.
-
-Keep Dispose() finalization order as:
-
-detach TLS slots first
-final Accumulate()
-clear _children
-clear _deadAccumulator
-That preserves as much still-rooted data as possible before teardown.
-Add a short invariant comment near NeedsReset:
-
-NeedsReset means “detached old-generation child; exclude from accumulation until its owner thread clears and reactivates it.”
-
-*/
-
-public sealed partial class ConcurrentHdrHistogram<T>
+internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
+    where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
     internal struct HistogramSlot
     {
@@ -84,11 +20,13 @@ public sealed partial class ConcurrentHdrHistogram<T>
 
     private static readonly ConcurrentDictionary<int, WeakReference<HistogramSlot[]?>> KnownSlotsByThreadId = new();
 
-    [ThreadStatic] private static HistogramSlot[]? ts_slots;
+    [ThreadStatic]
+    private static HistogramSlot[]? ts_slots;
 
     private static readonly List<bool> UsedTlsIndices = new(128);
 
     private readonly HdrHistogram<T> _accumulator;
+    private readonly TimeSpan _accumulateInterval;
     private HdrHistogram<T>? _deadAccumulator;
 
     private HdrHistogram<T>?[] _children = new HdrHistogram<T>?[Environment.ProcessorCount];
@@ -96,11 +34,16 @@ public sealed partial class ConcurrentHdrHistogram<T>
     private volatile int _tlsIndex;
     private long _lastUpdateTicks;
 
-    internal ConcurrentHdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
+    internal ThreadLocalHdrHistogram(
+        double relativeError,
+        ulong minTrackableValue,
+        ulong maxTrackableValue,
+        TimeSpan accumulateInterval)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
         _tlsIndex = GetUnusedTlsIndex();
         _accumulator = new HdrHistogram<T>(relativeError, minTrackableValue, maxTrackableValue);
+        _accumulateInterval = accumulateInterval;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -122,8 +65,9 @@ public sealed partial class ConcurrentHdrHistogram<T>
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    public void EnsureCapacityForIndex(nint index)
+    private HdrHistogram<T> GetLocalHistogramSlow()
     {
+        int index = _tlsIndex;
         if (index < 0)
             throw new ObjectDisposedException(typeof(T).Name);
 
@@ -139,7 +83,6 @@ public sealed partial class ConcurrentHdrHistogram<T>
                 storage.AsSpan().CopyTo(newStorage.AsSpan().Slice(0, storage.Length));
 
             ts_slots = newStorage;
-            // _length = (nuint)newStorage.LongLength;
 
             if (KnownSlotsByThreadId.TryGetValue(Environment.CurrentManagedThreadId,
                     out WeakReference<HistogramSlot[]?>? wr))
@@ -147,20 +90,19 @@ public sealed partial class ConcurrentHdrHistogram<T>
             else
                 KnownSlotsByThreadId[Environment.CurrentManagedThreadId] = new WeakReference<HistogramSlot[]?>(newStorage);
         }
+
+        HdrHistogram<T>? histogram = ts_slots![index].Value;
+        if (histogram == null)
+            histogram = ts_slots[index].Value = AllocateOrReset(Environment.CurrentManagedThreadId);
+
+        return histogram;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private HdrHistogram<T> GetLocalHistogramSlow()
+    private HdrHistogram<T> AllocateOrReset(int threadId)
     {
-        int index = _tlsIndex;
-        EnsureCapacityForIndex(index);
-
-        return ts_slots![index].Value ??= Allocate(Environment.CurrentManagedThreadId);
-    }
-
-    [MethodImpl(MethodImplOptions.NoInlining)]
-    private HdrHistogram<T> Allocate(int threadId)
-    {
+        HdrHistogram<T>? histogram = null;
+        HdrHistogram<T> acc = _accumulator;
         lock (this)
         {
             ObjectDisposedException.ThrowIf(_tlsIndex < 0, this);
@@ -202,6 +144,9 @@ public sealed partial class ConcurrentHdrHistogram<T>
                         if (idx == -1)
                             idx = i;
 
+                        if (h.ResetCount != acc.ResetCount)
+                            continue;
+
                         Interlocked.CompareExchange(ref _deadAccumulator, h, null)?.Add(h); // this is so nice :)
                     }
                 }
@@ -214,13 +159,27 @@ public sealed partial class ConcurrentHdrHistogram<T>
                     if (h is null || h.OwnerThreadId != threadId)
                         continue;
 
-                    if (idx == -1)
-                        idx = i;
+                    if (h.ResetCount != acc.ResetCount)
+                    {
+                        // A reset was requested. The only safe place to clean up the thread-local storage is from the target thread.
+                        h.Clear();
+                        h.ResetCount = acc.ResetCount; // This thread could have skipped multiple resets
+                        histogram = h;
+                    }
                     else
-                        children[i] = null; // TODO Should throw there? Found multiples
+                    {
+                        // Thread id was reused
+                        if (idx == -1)
+                            idx = i;
+                        else
+                            children[i] = null; // TODO Should throw there? Found multiples
 
-                    Interlocked.CompareExchange(ref _deadAccumulator, h, null)?.Add(h);
+                        Interlocked.CompareExchange(ref _deadAccumulator, h, null)?.Add(h);
+                    }
                 }
+
+                if (histogram is not null)
+                    return histogram;
 
                 if (idx == -1)
                 {
@@ -230,8 +189,7 @@ public sealed partial class ConcurrentHdrHistogram<T>
                     children = _children = newChildren;
                 }
 
-                var acc = _accumulator;
-                var histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue)
+                histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue)
                 {
                     OwnerThreadId = threadId
                 };
@@ -249,17 +207,13 @@ public sealed partial class ConcurrentHdrHistogram<T>
 
     private void Accumulate()
     {
-        // Only this method and Reset() take the lock over _accumulator
-        // Here, we do not need to wait for the lock but rely on optimistic reader retries over _accumulator.Version.
-        // Bot this methods and Reset() increment _accumulator.Version, so readers will spin.
-
         var lockTaken = false;
         try
         {
-            // If the dealy since last update is too small, just return without trying to take the lock
+            // If the delay since last update is too small, just return without trying to take the lock
             if (_tlsIndex < 0
                 || Stopwatch.GetElapsedTime(Volatile.Read(ref _lastUpdateTicks)) <
-                TimeSpan.FromMilliseconds(100)) // TODO Throttling freshness parameters
+                _accumulateInterval)
                 return;
 
             Monitor.TryEnter(_accumulator, ref lockTaken);
@@ -301,10 +255,17 @@ public sealed partial class ConcurrentHdrHistogram<T>
                 }
 
                 _accumulator.Clear();
+
                 foreach (var histogram in _children)
                 {
                     if (histogram is null)
                         continue;
+
+                    // TODO Should we detect dead thread here?
+
+                    if (histogram.ResetCount != _accumulator.ResetCount) // Need to wait until the target thread tries to record
+                        continue;
+
                     _accumulator.Add(histogram);
                 }
 
@@ -326,23 +287,27 @@ public sealed partial class ConcurrentHdrHistogram<T>
 
     public override void Reset()
     {
-        lock (_accumulator)
+        lock (this)
         {
-            Interlocked.Increment(ref _accumulator.Version);
+            Interlocked.Increment(ref Version);
             try
             {
-                _accumulator.Clear();
-                _deadAccumulator = null;
                 foreach (var histogram in _children)
                 {
-                    // TODO Need to swap the storage with a standby clean array, not just clear, because after concurrent clear 
-                    //      the storage may end up with old_value + 1
-                    histogram?.Clear();
+                    if (histogram is null)
+                        continue;
+
+                    if (KnownSlotsByThreadId.TryGetValue(histogram.OwnerThreadId, out var wr) && wr.TryGetTarget(out var slots))
+                        slots[_tlsIndex].Value = null; // Next attempt to record on the thread will clear the thread's storage
                 }
+
+                Interlocked.Increment(ref _accumulator.ResetCount);
+
+                _deadAccumulator = null;
             }
             finally
             {
-                Interlocked.Increment(ref _accumulator.Version);
+                Interlocked.Increment(ref Version);
             }
         }
     }
@@ -373,8 +338,6 @@ public sealed partial class ConcurrentHdrHistogram<T>
                 || tlsIndex != Interlocked.CompareExchange(ref _tlsIndex, ~tlsIndex, tlsIndex))
                 return;
 
-            DoAccumulate();
-
             // Dispose clears the TLS storage and release the tlsIndex for reuse, clears children and dead accumulator,
             // but it keeps the main accumulator with the latest data.
             // Attempts to write will lead to an ObjectDisposedException, but reads will succeed. 
@@ -388,14 +351,19 @@ public sealed partial class ConcurrentHdrHistogram<T>
 
                 if (KnownSlotsByThreadId.TryGetValue(tid, out var wr))
                 {
-                    if (!wr.TryGetTarget(out var threadContainer))
+                    if (!wr.TryGetTarget(out var slots))
                     {
                         KnownSlotsByThreadId.TryRemove(tid, out _);
                         continue;
                     }
 
-                    threadContainer[tlsIndex].Value = null;
+                    slots[tlsIndex].Value = null;
                 }
+            }
+
+            lock (_accumulator)
+            {
+                DoAccumulate();
             }
 
             _children.AsSpan().Clear();
@@ -414,5 +382,57 @@ public sealed partial class ConcurrentHdrHistogram<T>
         GC.SuppressFinalize(this);
     }
 
-    ~ConcurrentHdrHistogram() => DoDispose();
+    ~ThreadLocalHdrHistogram() => DoDispose();
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    // The assumption here is that there is one monitoring thread
+
+    public override ulong OverflowCount
+    {
+        get
+        {
+            Accumulate();
+            return _accumulator.OverflowCount;
+        }
+    }
+
+    internal int GetChildrenCount()
+    {
+        var count = 0;
+        foreach (var histogram in _children)
+        {
+            if (histogram is not null)
+                count++;
+        }
+
+        return count;
+    }
+
+    public override int FootprintInBytes =>
+        (GetChildrenCount() + 1 /*acc*/ + (_deadAccumulator is null ? 0 : 1)) * _accumulator.FootprintInBytes;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void Record(ulong value) => GetLocalHistogram().Record(value);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public override void Record(ulong value, uint count) => GetLocalHistogram().Record(value, count);
+
+    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default)
+    {
+        Accumulate();
+        return _accumulator.GetPercentileValue(rank, valueSelection);
+    }
+
+    public override Percentile GetPercentile(double rank)
+    {
+        Accumulate();
+        return _accumulator.GetPercentile(rank);
+    }
+
+    public override Bucket GetBucket(ulong value)
+    {
+        Accumulate();
+        return _accumulator.GetBucket(value);
+    }
 }

@@ -65,11 +65,10 @@ public abstract partial class HdrHistogram : IDisposable
     /// <summary>
     /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
     /// <para />
-    /// If this instance is being updated during this call, then the value may be skewed higher.
-    /// If this instance is reset updated during this then this method can throw.
+    /// If this instance is being updated during this call, then the value may be skewed lower.
     /// </summary>
     /// <param name="rank">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
-    /// <param name="valueSelection"></param>
+    /// <param name="valueSelection">A rule to select the equivalent value in a bucket.</param>
     /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
     /// <exception cref="InvalidOperationException"></exception>
     public abstract ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default);

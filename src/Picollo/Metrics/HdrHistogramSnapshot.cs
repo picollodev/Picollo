@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace Picollo.Metrics;
 
-public class HdrHistogramSnapshot<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
+internal class HdrHistogramSnapshot<T> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
     public HdrHistogram Histogram { get; }
     private long _version;

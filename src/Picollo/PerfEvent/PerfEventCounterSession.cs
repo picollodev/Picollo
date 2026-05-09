@@ -195,7 +195,7 @@ public unsafe partial class PerfEventCounterSession : IDisposable
             {
                 var pairOverhead = counter.RawDelta.Value;
                 counter.PairReadOverheadHistogram?.Record(pairOverhead);
-                if ((i == 0 || pairOverhead > counter.PairReadOverhead && pairOverhead > 0))
+                if ((i == 0 || pairOverhead > counter.PairReadOverhead))
                 {
                     counter.PairReadOverhead = pairOverhead;
                 }

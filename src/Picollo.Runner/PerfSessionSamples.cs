@@ -13,7 +13,7 @@ public class PerfSessionSamples
 
         var tid = CpuUtils.GetOsThreadId();
         using var perfSession =
-            PerfEventCounterSession.Config
+            PerfEventCounterSession.Factory
                 .WithTarget((int)tid, -1)
                 .WithPinned(true)
                 .WithKernel(false)

@@ -10,19 +10,19 @@ public partial class PerfEventCounterSession
                                               && NativeMethods.IsSupported();
 
     /// <summary>
-    /// Returns a new session factory, which can be fluently configured and completed with a call to <see cref="Factory.Create"/>.
+    /// Returns a new session factory, which can be fluently configured and completed with a call to <see cref="PerfEventCounterSessionFactory.Create"/>.
     /// </summary>
     /// <seealso>https://man7.org/linux/man-pages/man2/perf_event_open.2.html</seealso>
-    public static Factory Config => new(new PerfEventCounterSession());
+    public static PerfEventCounterSessionFactory Factory => new(new PerfEventCounterSession());
 
-    public readonly ref struct Factory
+    public readonly ref struct PerfEventCounterSessionFactory
     {
         internal readonly PerfEventCounterSession Session = null!;
 
-        public Factory() =>
-            throw new InvalidOperationException($"Cannot use {nameof(PerfEventCounterSession)}.{nameof(Factory)} directly.");
+        public PerfEventCounterSessionFactory() =>
+            throw new InvalidOperationException($"Cannot use {nameof(PerfEventCounterSession)}.{nameof(PerfEventCounterSessionFactory)} directly.");
 
-        internal Factory(PerfEventCounterSession session)
+        internal PerfEventCounterSessionFactory(PerfEventCounterSession session)
         {
             Session = session;
         }
@@ -41,10 +41,10 @@ public partial class PerfEventCounterSession
         /// <seealso>https://man7.org/linux/man-pages/man2/perf_event_open.2.html</seealso>
         /// <param name="pid">OS thread/process id to monitor</param>
         /// <param name="cpu">CPU core id to monitor</param>
-        /// <returns>A <see cref="Factory"/> to configure a new session.</returns>
+        /// <returns>A <see cref="PerfEventCounterSessionFactory"/> to configure a new session.</returns>
         /// <exception cref="PlatformNotSupportedException">The platform is not Linux x64</exception>
         /// <exception cref="InvalidOperationException">Both <paramref name="pid"/> and <paramref name="cpu"/> are negative.</exception>
-        public Factory WithTarget(int pid, int cpu)
+        public PerfEventCounterSessionFactory WithTarget(int pid, int cpu)
         {
             if (pid < 0) pid = -1;
             if (cpu < 0) cpu = -1;
@@ -65,7 +65,7 @@ public partial class PerfEventCounterSession
         /// enough hardware counters or because of a conflict with some other event),
         /// then the session cannot be created. 
         /// </summary>
-        public Factory WithPinned(bool pinned = true)
+        public PerfEventCounterSessionFactory WithPinned(bool pinned = true)
         {
             Session.EnsureNotOpened();
             Session._pinned = pinned;
@@ -75,7 +75,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// If this is not set, the count excludes events that happen in kernel space.
         /// </summary>
-        public Factory WithKernel(bool withKernel = true)
+        public PerfEventCounterSessionFactory WithKernel(bool withKernel = true)
         {
             Session.EnsureNotOpened();
             Session._withKernel = withKernel;
@@ -87,7 +87,7 @@ public partial class PerfEventCounterSession
         /// </summary>
         /// <param name="enabled"></param>
         /// <returns></returns>
-        public Factory WithEnabled(bool enabled = true)
+        public PerfEventCounterSessionFactory WithEnabled(bool enabled = true)
         {
             Session.EnsureNotOpened();
             Session._enabled = enabled;
@@ -98,7 +98,7 @@ public partial class PerfEventCounterSession
         /// Adds counters for <see cref="PerfHardwareCounterId.Instructions"/>, <see cref="PerfHardwareCounterId.CpuCycles"/> and <see cref="PerfHardwareCounterId.RefCpuCycles"/>.
         /// These counters should always be available on x64 and do not consume programmable counter slots. 
         /// </summary>
-        public Factory WithFixedCounters()
+        public PerfEventCounterSessionFactory WithFixedCounters()
         {
             Session.EnsureNotOpened();
             WithHardwareCounter(PerfHardwareCounterId.Instructions);
@@ -118,7 +118,7 @@ public partial class PerfEventCounterSession
         /// <br /> <see cref="PerfHardwareCounterId.CacheMisses"/>
         /// </summary>
         /// <returns></returns>
-        public Factory WithHardwareCounters()
+        public PerfEventCounterSessionFactory WithHardwareCounters()
         {
             Session.EnsureNotOpened();
             WithHardwareCounter(PerfHardwareCounterId.Instructions);
@@ -134,7 +134,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a hardware counter specified by <see cref="PerfHardwareCounterId"/>.
         /// </summary>
-        public Factory WithHardwareCounter(PerfHardwareCounterId hardwareCounterId)
+        public PerfEventCounterSessionFactory WithHardwareCounter(PerfHardwareCounterId hardwareCounterId)
         {
             WithHardwareCounter(hardwareCounterId, out _);
             return this;
@@ -143,7 +143,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a hardware counter specified by <see cref="PerfHardwareCounterId"/> and get the counter instance as <paramref name="counter"/>.
         /// </summary>
-        public Factory WithHardwareCounter(PerfHardwareCounterId hardwareCounterId, out PerfEventCounter counter)
+        public PerfEventCounterSessionFactory WithHardwareCounter(PerfHardwareCounterId hardwareCounterId, out PerfEventCounter counter)
         {
             counter = Session.AddCounter(PerfTypeId.Hardware, (ulong)hardwareCounterId);
             return this;
@@ -152,7 +152,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a software counter specified by <see cref="PerfSoftwareCounterId"/>.
         /// </summary>
-        public Factory WithSoftwareCounter(PerfSoftwareCounterId softwareCounterId)
+        public PerfEventCounterSessionFactory WithSoftwareCounter(PerfSoftwareCounterId softwareCounterId)
         {
             WithSoftwareCounter(softwareCounterId, out _);
             return this;
@@ -161,7 +161,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a software counter specified by <see cref="PerfSoftwareCounterId"/> and get the counter instance as <paramref name="counter"/>.
         /// </summary>
-        public Factory WithSoftwareCounter(PerfSoftwareCounterId softwareCounterId, out PerfEventCounter counter)
+        public PerfEventCounterSessionFactory WithSoftwareCounter(PerfSoftwareCounterId softwareCounterId, out PerfEventCounter counter)
         {
             counter = Session.AddCounter(PerfTypeId.Software, (ulong)softwareCounterId);
             return this;
@@ -170,7 +170,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a cache counter specified by <see cref="PerfCacheCounterId"/>.
         /// </summary>
-        public Factory WithCacheCounter(PerfCacheCounterId cacheCounterId)
+        public PerfEventCounterSessionFactory WithCacheCounter(PerfCacheCounterId cacheCounterId)
         {
             WithCacheCounter(cacheCounterId, out _);
             return this;
@@ -179,7 +179,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a cache counter specified by <see cref="PerfCacheCounterId"/> and get the counter instance as <paramref name="counter"/>.
         /// </summary>
-        public Factory WithCacheCounter(PerfCacheCounterId cacheCounterId, out PerfEventCounter counter)
+        public PerfEventCounterSessionFactory WithCacheCounter(PerfCacheCounterId cacheCounterId, out PerfEventCounter counter)
         {
             counter = Session.AddCounter(PerfTypeId.HardwareCache, (ulong)cacheCounterId);
             return this;
@@ -188,7 +188,7 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a raw counter specified by a config value.
         /// </summary>
-        public Factory WithRawCounter(ulong config)
+        public PerfEventCounterSessionFactory WithRawCounter(ulong config)
         {
             WithRawCounter(config, out _);
             return this;
@@ -197,17 +197,19 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a raw counter specified by a config value and get the counter instance as <paramref name="counter"/>.
         /// </summary>
-        public Factory WithRawCounter(ulong config, out PerfEventCounter counter)
+        public PerfEventCounterSessionFactory WithRawCounter(ulong config, out PerfEventCounter counter)
         {
             counter = Session.AddCounter(PerfTypeId.Raw, config);
             return this;
         }
 
+        /// <summary>
+        /// Calls the perf_event_open on all added counters and returns an active session.
+        /// </summary>
         public PerfEventCounterSession Create()
         {
-            var session = Session;
-            session.Open();
-            return session;
+            Session.Open();
+            return Session;
         }
     }
 }

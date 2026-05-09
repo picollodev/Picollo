@@ -75,7 +75,7 @@ public class HdrHistogramBenches
         Console.WriteLine($"# PicolloConcurrentBench: {(threadLocal ? "thread-local" : "interlocked")}");
         Metrics.HdrHistogram h =
             threadLocal
-                ? new ConcurrentHdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue)
+                ? new ThreadLocalHdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue, TimeSpan.FromMilliseconds(100))
                 : new InterlockedUInt32HdrHistogram((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue);
 
         if (!threadLocal)

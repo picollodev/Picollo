@@ -10,11 +10,13 @@ internal class Program
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
 
         var runs = 10;
-        var threads = 4;
+        var threads = 2;
 
         HdrHistogramBenches.PicolloBench(runs);
-        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
+        HdrHistogramBenches.PicolloThreadLocalBench(runs);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
+        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
+        
         HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
 

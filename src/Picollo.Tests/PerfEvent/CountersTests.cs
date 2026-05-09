@@ -24,7 +24,7 @@ public class CountersTests
     public void AddCounterOverloadsPopulateKnownCountersAndEnumerable()
     {
         var session =
-            PerfEventCounterSession.Config
+            PerfEventCounterSession.Factory
                 .WithTarget(Environment.ProcessId, 0)
                 .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
                 .WithHardwareCounter(PerfHardwareCounterId.Instructions)
@@ -44,7 +44,7 @@ public class CountersTests
     [Test]
     public void DuplicateCounterDoesNotOverwriteKnownCounter()
     {
-        var factory = PerfEventCounterSession.Config
+        var factory = PerfEventCounterSession.Factory
             .WithTarget(Environment.ProcessId, 0)
             .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles);
 
@@ -67,7 +67,7 @@ public class CountersTests
     [Test]
     public unsafe void SnapshotCanUseCurrentOrDeltaCounterValues()
     {
-        var session = PerfEventCounterSession.Config
+        var session = PerfEventCounterSession.Factory
             .WithTarget(Environment.ProcessId, 0)
             .WithHardwareCounter(PerfHardwareCounterId.CpuCycles, out var cycles)
             .WithHardwareCounter(PerfHardwareCounterId.Instructions, out var instructions)

@@ -17,15 +17,16 @@ namespace Picollo.Metrics;
 /// </remarks>
 /// <typeparam name="TCounter">The backing storage type for counters. Only <see cref="uint"/> and <see cref="ulong"/> are supported.</typeparam>
 /// <typeparam name="TAddition"></typeparam>
-public class HdrHistogram<TCounter, TAddition> : HdrHistogram
+internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>
     where TAddition : struct, IAddition
 {
     internal UnsafeSpan<TCounter> Data;
     internal TCounter OverflowSlot;
-    internal int OwnerThreadId;
+    internal volatile int OwnerThreadId;
+    internal volatile int ResetCount;
 
-    internal HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
+    internal HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
         // Only uint and ulong backing counter storage is supported initially
@@ -59,6 +60,7 @@ public class HdrHistogram<TCounter, TAddition> : HdrHistogram
             try
             {
                 Clear();
+                Interlocked.Increment(ref ResetCount);
             }
             finally
             {
@@ -109,8 +111,8 @@ public class HdrHistogram<TCounter, TAddition> : HdrHistogram
             return ref OverflowSlot;
 
         // TODO Remove this when thread-local cleans its own storage after reset
-        if (typeof(TAddition) == typeof(VolatileAddition))
-            Volatile.ReadBarrier();
+        // if (typeof(TAddition) == typeof(VolatileAddition))
+        //     Volatile.ReadBarrier();
 
         return ref Data.GetAtUnsafe(storageIndex);
     }
@@ -128,14 +130,14 @@ public class HdrHistogram<TCounter, TAddition> : HdrHistogram
         GetPercentile(rank).GetValue(valueSelection);
 
     /// <summary>
-    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentiles is found.
+    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentile is found.
     /// </summary>
     /// <param name="rank"></param>
     /// <returns></returns>
     public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data);
 
     /// <summary>
-    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentiles is found.
+    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentile is found.
     /// </summary>
     /// <param name="rank">The percentile rank.</param>
     /// <param name="data"></param>

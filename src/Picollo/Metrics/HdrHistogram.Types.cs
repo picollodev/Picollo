@@ -5,35 +5,33 @@ using System.Threading;
 
 namespace Picollo.Metrics;
 
-public sealed class UInt64HdrHistogram : HdrHistogram<ulong, SimpleAddition>
+internal sealed class UInt64HdrHistogram : HdrHistogram<ulong, SimpleAddition>
 {
-    internal UInt64HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
+    internal UInt64HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
     }
 }
 
-public sealed class UInt32HdrHistogram : HdrHistogram<uint, SimpleAddition>
+internal sealed class UInt32HdrHistogram : HdrHistogram<uint, SimpleAddition>
 {
-    internal UInt32HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
+    internal UInt32HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
     }
 }
 
-public sealed class InterlockedUInt64HdrHistogram : HdrHistogram<ulong, InterlockedAddition>
+internal sealed class InterlockedUInt64HdrHistogram : HdrHistogram<ulong, InterlockedAddition>
 {
-    internal InterlockedUInt64HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0,
-        ulong maxTrackableValue = ulong.MaxValue)
+    internal InterlockedUInt64HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
     }
 }
 
-public sealed class InterlockedUInt32HdrHistogram : HdrHistogram<uint, InterlockedAddition>
+internal sealed class InterlockedUInt32HdrHistogram : HdrHistogram<uint, InterlockedAddition>
 {
-    internal InterlockedUInt32HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0,
-        ulong maxTrackableValue = ulong.MaxValue)
+    internal InterlockedUInt32HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
     }
@@ -42,22 +40,13 @@ public sealed class InterlockedUInt32HdrHistogram : HdrHistogram<uint, Interlock
 internal sealed class HdrHistogram<T>
     : HdrHistogram<T, SimpleAddition> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
 {
-    internal HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
+    internal HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
     }
 }
 
-internal sealed class VolatileHdrHistogram<T>
-    : HdrHistogram<T, VolatileAddition> where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>
-{
-    internal VolatileHdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
-        : base(relativeError, minTrackableValue, maxTrackableValue)
-    {
-    }
-}
-
-public interface IAddition
+internal interface IAddition
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     static abstract void Increment<T>(ref T value) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>;
@@ -66,7 +55,7 @@ public interface IAddition
     static abstract void Add<T>(ref T value, T count) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>;
 }
 
-public readonly struct SimpleAddition : IAddition
+internal readonly struct SimpleAddition : IAddition
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Increment<T>(ref T value) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T> => value++;
@@ -75,17 +64,7 @@ public readonly struct SimpleAddition : IAddition
     public static void Add<T>(ref T value, T increment) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T> => value += increment;
 }
 
-// TODO This is not clean and will not be needed when TLS Reset() sets a flag
-internal readonly struct VolatileAddition : IAddition
-{
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Increment<T>(ref T value) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T> => value++;
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void Add<T>(ref T value, T increment) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T> => value += increment;
-}
-
-public readonly struct InterlockedAddition : IAddition
+internal readonly struct InterlockedAddition : IAddition
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Increment<T>(ref T value) where T : unmanaged, IBinaryInteger<T>, IUnsignedNumber<T>

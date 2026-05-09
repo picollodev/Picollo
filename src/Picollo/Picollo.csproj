@@ -6,6 +6,7 @@
     <PackageId>Picollo</PackageId>
     <IsPackable>true</IsPackable>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <WarningsAsErrors>True</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

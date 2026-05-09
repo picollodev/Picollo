@@ -36,7 +36,7 @@ public struct TickScope : IDisposable
 
 /// <summary>
 /// A <c>using</c>-pattern scope that measures elapsed nanoseconds from construction to
-/// <see cref="Dispose"/> (or an explicit <see cref="Record"/> call) and records the value into a histogram.
+/// <see cref="Dispose"/> and records the value into a histogram.
 /// </summary>
 public struct NanoScope : IDisposable
 {
@@ -124,7 +124,7 @@ public struct MilliScope : IDisposable
     }
 }
 
-public static partial class HdrHistogramExtensions
+public static class HdrHistogramExtensions
 {
     public static TickScope GetTickScope(this HdrHistogram histogram) => new(histogram);
     public static NanoScope GetNanoScope(this HdrHistogram histogram) => new(histogram);

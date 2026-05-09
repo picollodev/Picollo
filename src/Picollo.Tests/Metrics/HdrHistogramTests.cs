@@ -19,7 +19,7 @@ public class HdrHistogramTests
     [TestCase(0.00001)]
     public void QuantizationStartsAfterSecondBucket(double relativeError)
     {
-        var h = new HdrHistogram<uint>(relativeError);
+        var h = new HdrHistogram<uint>(relativeError, 0, ulong.MaxValue);
 
         h.GetRef(0)++;
         h.GetRef(1)++;
@@ -43,7 +43,7 @@ public class HdrHistogramTests
     [Test]
     public void GetPercentile()
     {
-        var h = new HdrHistogram<uint>(0.01);
+        var h = new HdrHistogram<uint>(0.01, 0, ulong.MaxValue);
         h.Record(1);
         h.Record(2);
         h.Record(3);
