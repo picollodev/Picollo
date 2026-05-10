@@ -126,30 +126,44 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     /// <param name="valueSelection">A rule to select the equivalent value in a bucket.</param>
     /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
     /// <exception cref="InvalidOperationException"></exception>
-    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default) =>
-        GetPercentile(rank).GetValue(valueSelection);
+    public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default)
+    {
+        Span<double> ranks = stackalloc double[1];
+        Span<Percentile> percentiles = stackalloc Percentile[1];
+        ranks[0] = rank;
+        GetPercentiles(ranks, percentiles, Data);
+        return percentiles[0].GetValue(valueSelection);
+    }
+
+    public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles) =>
+        GetPercentiles(sortedRanks, percentiles, Data);
 
     /// <summary>
     /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentile is found.
     /// </summary>
     /// <param name="rank"></param>
     /// <returns></returns>
-    public override Percentile GetPercentile(double rank) => GetPercentile(rank, Data);
-
-    /// <summary>
-    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentile is found.
-    /// </summary>
-    /// <param name="rank">The percentile rank.</param>
-    /// <param name="data"></param>
-    /// <param name="existingTotalCount"></param>
-    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    internal Percentile GetPercentile(double rank, UnsafeSpan<TCounter> data, ulong? existingTotalCount = null)
+    public override Percentile GetPercentile(double rank)
     {
-        Percentile percentile;
+        Span<double> ranks = stackalloc double[1];
+        Span<Percentile> percentiles = stackalloc Percentile[1];
+        ranks[0] = rank;
+        GetPercentiles(ranks, percentiles, Data);
+        return percentiles[0];
+    }
+
+    internal void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles, UnsafeSpan<TCounter> data,
+        ulong? existingTotalCount = null)
+    {
+        if (percentiles.Length < sortedRanks.Length)
+            throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
+
+        if (sortedRanks.IsEmpty)
+            return;
+
         var spinner = new SpinWait();
         while (true)
         {
-            percentile = default;
             var version = Volatile.Read(ref Version);
             if ((version & 1) != 0)
             {
@@ -157,53 +171,45 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                 continue;
             }
 
-            if (typeof(TCounter) == typeof(uint) && !existingTotalCount.HasValue)
-            {
-                // TensorPrimitives.Sum can overflow for uint storage quite easily
-
-                ulong total = 0L;
-                for (nint i = 0; i < data.LongCount; i++)
-                {
-                    TCounter value = data.GetAtUnsafe(i);
-                    ulong count = TtoUlong(value);
-                    total += count;
-                }
-
-                existingTotalCount = total;
-            }
-
-            var totalCount = existingTotalCount ?? TtoUlong(TensorPrimitives.Sum(data.AsSpan()));
+            ulong totalCount = existingTotalCount ?? GetTotalCount(data);
+            percentiles.Slice(0, sortedRanks.Length).Clear();
 
             if (totalCount > 0)
             {
-                if (double.IsNaN(rank))
-                    rank = 0.0;
-
-                rank = Math.Clamp(rank, 0.0, 100.0);
-
-                ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
-                targetCount = Math.Clamp(targetCount, 1UL, totalCount);
-
                 ulong runningCount = 0;
+                int rankIndex = 0;
 
-                for (nint i = 0; i < data.LongCount; i++)
+                for (nint i = 0; i < data.LongCount && rankIndex < sortedRanks.Length; i++)
                 {
                     TCounter value = data.GetAtUnsafe(i);
                     ulong count = TtoUlong(value);
                     runningCount += count;
 
-                    if (runningCount < targetCount)
+                    if (count == 0)
                         continue;
 
                     var storageIndex = (nuint)i;
                     var logicalIndex = storageIndex + _firstIndexOffset;
-
                     var (start, step) = _buckets.GetBucketRange(logicalIndex);
-
                     var bucket = new Bucket(start, step, count, (int)storageIndex);
 
-                    percentile = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
-                    break;
+                    while (rankIndex < sortedRanks.Length)
+                    {
+                        double rank = sortedRanks[rankIndex];
+                        if (double.IsNaN(rank))
+                            rank = 0.0;
+
+                        rank = Math.Clamp(rank, 0.0, 100.0);
+
+                        ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
+                        targetCount = Math.Clamp(targetCount, 1UL, totalCount);
+
+                        if (runningCount < targetCount)
+                            break;
+
+                        percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
+                        rankIndex++;
+                    }
                 }
             }
 
@@ -211,8 +217,22 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                 break;
             spinner.Reset();
         }
+    }
 
-        return percentile;
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ulong GetTotalCount(UnsafeSpan<TCounter> data)
+    {
+        if (typeof(TCounter) == typeof(uint))
+        {
+            // TensorPrimitives.Sum can overflow for uint storage quite easily
+            ulong total = 0L;
+            for (nint i = 0; i < data.LongCount; i++)
+                total += TtoUlong(data.GetAtUnsafe(i));
+
+            return total;
+        }
+
+        return TtoUlong(TensorPrimitives.Sum(data.AsSpan()));
     }
 
     // Bad for public API, this should be exposed on the snapshot

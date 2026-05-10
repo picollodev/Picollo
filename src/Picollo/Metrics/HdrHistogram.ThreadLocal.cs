@@ -256,12 +256,29 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
 
                 _accumulator.Clear();
 
-                foreach (var histogram in _children)
+                var children = _children;
+                for (int i = 0; i < children.Length; i++)
                 {
+                    var histogram = children[i];
                     if (histogram is null)
                         continue;
 
-                    // TODO Should we detect dead thread here?
+                    var tid = histogram.OwnerThreadId;
+                    if (!KnownSlotsByThreadId.TryGetValue(tid, out var wr)
+                        || !wr.TryGetTarget(out _))
+                    {
+                        // Slots were collected
+                        if (wr is not null)
+                            KnownSlotsByThreadId.TryRemove(tid, out _);
+
+                        children[i] = null;
+
+                        if (histogram.ResetCount != _accumulator.ResetCount)
+                            continue;
+
+                        Interlocked.CompareExchange(ref _deadAccumulator, histogram, null)?.Add(histogram);
+                        continue;
+                    }
 
                     if (histogram.ResetCount != _accumulator.ResetCount) // Need to wait until the target thread tries to record
                         continue;
@@ -422,6 +439,12 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
     {
         Accumulate();
         return _accumulator.GetPercentileValue(rank, valueSelection);
+    }
+
+    public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles)
+    {
+        Accumulate();
+        _accumulator.GetPercentiles(sortedRanks, percentiles);
     }
 
     public override Percentile GetPercentile(double rank)

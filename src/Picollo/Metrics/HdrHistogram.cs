@@ -74,6 +74,13 @@ public abstract partial class HdrHistogram : IDisposable
     public abstract ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default);
 
     /// <summary>
+    /// Writes percentile details for the provided sorted percentile ranks into <paramref name="percentiles"/>.
+    /// </summary>
+    /// <param name="sortedRanks">Percentile ranks sorted in ascending order. Values outside [0, 100] are clamped.</param>
+    /// <param name="percentiles">Target buffer that receives percentile results.</param>
+    public abstract void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles);
+
+    /// <summary>
     /// Returns a <see cref="Percentile"/> struct with bucket and count details.
     /// </summary>
     /// <param name="rank"></param>
