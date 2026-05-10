@@ -5,6 +5,13 @@ namespace Picollo.Metrics;
 
 public class HdrHistogramSnapshot : ReadOnlyHdrHistogram 
 {
+    internal struct DataSnapshot
+    {
+        private HdrBuckets LogicalBuckets;
+        private ulong TotalCount;
+        private ulong OverflowCount;
+    }
+    
     public HdrHistogram Histogram { get; }
     private long _version;
     public DateTime Timestamp { get; private set; }
@@ -25,6 +32,8 @@ public class HdrHistogramSnapshot : ReadOnlyHdrHistogram
     }
 
     public override ulong OverflowCount => throw new NotImplementedException();
+
+    public override ulong TotalCount => throw new NotImplementedException();
 
     public override int FootprintInBytes => Histogram.FootprintInBytes; // TODO Add own overheads
 

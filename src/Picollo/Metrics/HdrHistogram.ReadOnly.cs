@@ -15,6 +15,11 @@ public abstract class ReadOnlyHdrHistogram
     public abstract int FootprintInBytes { get; }
 
     /// <summary>
+    /// Total number of observations currently represented by tracked buckets.
+    /// </summary>
+    public abstract ulong TotalCount { get; }
+
+    /// <summary>
     /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
     /// <para />
     /// If this instance is being updated during this call, then the value may be skewed lower, as the total count is calculated first.

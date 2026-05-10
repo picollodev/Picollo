@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Threading;
 
 namespace Picollo.Metrics;
 
 public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
 {
-    private protected readonly HdrBuckets _buckets;
+    internal readonly HdrBuckets LogicalBuckets;
     protected readonly nuint _firstIndexOffset;
     internal long Version;
 
@@ -19,17 +20,17 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
         if (minTrackableValue >= maxTrackableValue)
             throw new ArgumentException($"minTrackableValue [{minTrackableValue}] >= maxTrackableValue [{maxTrackableValue}]");
 
-        _buckets = new HdrBuckets(relativeError);
+        LogicalBuckets = new HdrBuckets(relativeError);
 
         MinTrackableValue = minTrackableValue;
         MaxTrackableValue = maxTrackableValue;
 
-        _firstIndexOffset = _buckets.GetIndex(minTrackableValue);
+        _firstIndexOffset = LogicalBuckets.GetIndex(minTrackableValue);
     }
 
-    public double RelativeError => _buckets.RelativeError;
+    public double RelativeError => LogicalBuckets.RelativeError;
 
-    public int BlockSize => _buckets.BlockSize;
+    public int BlockSize => LogicalBuckets.BlockSize;
 
     /// <summary>
     /// The number of counters available in the backing storage.
@@ -39,14 +40,14 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
         get
         {
             var lastVirtualIndex =
-                (nuint)Math.Min((long)_buckets.GetIndex(MaxTrackableValue), _buckets.BlockSize * _buckets.BlockCount - 1);
+                (nuint)Math.Min((long)LogicalBuckets.GetIndex(MaxTrackableValue), LogicalBuckets.BlockSize * LogicalBuckets.BlockCount - 1);
             var storageSize = (int)(lastVirtualIndex + 1 - _firstIndexOffset);
             return storageSize;
         }
     }
 
-    
-    
+    public abstract override ulong TotalCount { get; }
+
     /// <summary>
     /// Record a single observation of the <paramref name="value"/>.
     /// </summary>
@@ -73,6 +74,34 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
             longValue = (uint)(object)value;
         else if (typeof(TCounter) == typeof(ulong))
             longValue = (ulong)(object)value;
+        else
+            throw new NotSupportedException("Supported storage types are only uint and ulong");
+
+        return longValue;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ulong TtoUlong<TCounter>(ref TCounter value) where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>
+    {
+        ulong longValue;
+        if (typeof(TCounter) == typeof(uint))
+            longValue = Unsafe.As<TCounter, uint>(ref value);
+        else if (typeof(TCounter) == typeof(ulong))
+            longValue = Unsafe.As<TCounter, ulong>(ref value);
+        else
+            throw new NotSupportedException("Supported storage types are only uint and ulong");
+
+        return longValue;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static ulong TtoUlongVolatile<TCounter>(ref TCounter value) where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>
+    {
+        ulong longValue;
+        if (typeof(TCounter) == typeof(uint))
+            longValue = Volatile.Read(ref Unsafe.As<TCounter, uint>(ref value));
+        else if (typeof(TCounter) == typeof(ulong))
+            longValue = Volatile.Read(ref Unsafe.As<TCounter, ulong>(ref value));
         else
             throw new NotSupportedException("Supported storage types are only uint and ulong");
 

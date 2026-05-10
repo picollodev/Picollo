@@ -41,7 +41,9 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     /// <summary>
     /// The total number of observations that fell outside the [<see cref="HdrHistogram.MinTrackableValue"/>, <see cref="HdrHistogram.MaxTrackableValue"/>] range.
     /// </summary>
-    public override ulong OverflowCount => TtoUlong(OverflowSlot);
+    public override ulong OverflowCount => ReadConsistent(static h => TtoUlong(ref h.OverflowSlot));
+
+    public override ulong TotalCount => ReadConsistent(static h => h.GetTotalCount(h.Data));
 
     public override int FootprintInBytes =>
         (int)Data.ByteLength
@@ -93,19 +95,39 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     /// </summary>
     public override Bucket GetBucket(ulong value)
     {
-        var logicalIndex = _buckets.GetIndex(value);
+        var logicalIndex = LogicalBuckets.GetIndex(value);
         var storageIndex = logicalIndex - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
             return new Bucket(0, 0, OverflowCount, -1);
-        var count = TtoUlong(Data.GetAtUnsafe(storageIndex));
-        var (start, step) = _buckets.GetBucketRange(logicalIndex);
+
+        ulong count;
+
+        var spinner = new SpinWait();
+        while (true)
+        {
+            var version = Volatile.Read(ref Version);
+            if ((version & 1) != 0)
+            {
+                spinner.SpinOnce();
+                continue;
+            }
+
+            count = TtoUlongVolatile(ref Data.GetAtUnsafe(storageIndex));
+
+            if (version == Volatile.Read(ref Version))
+                break;
+
+            spinner.Reset();
+        }
+
+        var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
         return new Bucket(start, step, count, (int)storageIndex);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref TCounter GetRef(ulong value)
     {
-        var storageIndex = _buckets.GetIndex(value) - _firstIndexOffset;
+        var storageIndex = LogicalBuckets.GetIndex(value) - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
             return ref OverflowSlot;
 
@@ -190,24 +212,24 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
 
             if (totalCount > 0)
             {
-                ulong runningCount = 0;
-                int rankIndex = 0;
+                ulong runningCountFromTail = 0;
+                int rankIndex = sortedRanks.Length - 1;
 
-                for (nint i = 0; i < data.LongCount && rankIndex < sortedRanks.Length; i++)
+                for (nint i = data.LongCount - 1; i >= 0 && rankIndex >= 0; i--)
                 {
-                    TCounter value = data.GetAtUnsafe(i);
-                    ulong count = TtoUlong(value);
-                    runningCount += count;
+                    ulong count = TtoUlong(ref data.GetAtUnsafe(i));
 
                     if (count == 0)
                         continue;
 
+                    runningCountFromTail += count;
+
                     var storageIndex = (nuint)i;
                     var logicalIndex = storageIndex + _firstIndexOffset;
-                    var (start, step) = _buckets.GetBucketRange(logicalIndex);
+                    var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
                     var bucket = new Bucket(start, step, count, (int)storageIndex);
 
-                    while (rankIndex < sortedRanks.Length)
+                    while (rankIndex >= 0)
                     {
                         double rank = sortedRanks[rankIndex];
                         if (double.IsNaN(rank))
@@ -218,11 +240,14 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                         ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
                         targetCount = Math.Clamp(targetCount, 1UL, totalCount);
 
-                        if (runningCount < targetCount)
+                        ulong targetCountFromTail = totalCount - targetCount + 1;
+
+                        if (runningCountFromTail < targetCountFromTail)
                             break;
 
+                        ulong runningCount = totalCount - (runningCountFromTail - count);
                         percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
-                        rankIndex++;
+                        rankIndex--;
                     }
                 }
             }
@@ -265,5 +290,57 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     {
         OverflowSlot += UlongToT<TCounter>(other.OverflowCount);
         TensorPrimitives.Add(other.Data.AsSpan(), Data.AsSpan(), Data.AsSpan());
+    }
+
+    private TResult ReadConsistent<TResult>(Func<HdrHistogram<TCounter, TAddition>, TResult> reader)
+    {
+        var spinner = new SpinWait();
+
+        while (true)
+        {
+            var version = Volatile.Read(ref Version);
+            if ((version & 1) != 0)
+            {
+                spinner.SpinOnce();
+                continue;
+            }
+
+            TResult? result = reader(this);
+
+            if (version == Volatile.Read(ref Version))
+                return result;
+
+            spinner.Reset();
+        }
+    }
+
+    private TResult ReadConsistent<TResult, TReader>()
+        where TReader : struct, IReadOperation<TResult>
+    {
+        TResult result = default(TResult);
+        var spinner = new SpinWait();
+
+        while (true)
+        {
+            var version = Volatile.Read(ref Version);
+            if ((version & 1) != 0)
+            {
+                spinner.SpinOnce();
+                continue;
+            }
+
+            // work
+            result = TReader.Read(this);
+
+            if (version == Volatile.Read(ref Version))
+                return result;
+
+            spinner.Reset();
+        }
+    }
+
+    private interface IReadOperation<TResult>
+    {
+        static abstract TResult Read(HdrHistogram<TCounter, TAddition> histogram);
     }
 }

@@ -321,6 +321,15 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
                 Interlocked.Increment(ref _accumulator.ResetCount);
 
                 _deadAccumulator = null;
+
+                // Do not do _accumulator.Clear();
+                // Since _accumulator.Version is not modified here, readers may still use the previous
+                // accumulated snapshot until a later Accumulate() rebuilds _accumulator
+                // So for a read method:
+                // Accumulate()
+                //                         <-- Reset()
+                // ReadConsistent()
+                // The read itself is structurally consistent. It will not see the Reset on that call, but that is intentional.
             }
             finally
             {
@@ -411,6 +420,15 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
         {
             Accumulate();
             return _accumulator.OverflowCount;
+        }
+    }
+
+    public override ulong TotalCount
+    {
+        get
+        {
+            Accumulate();
+            return _accumulator.TotalCount;
         }
     }
 
