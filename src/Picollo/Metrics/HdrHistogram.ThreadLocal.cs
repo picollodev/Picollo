@@ -441,6 +441,13 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
         return _accumulator.GetPercentileValue(rank, valueSelection);
     }
 
+    public override void GetPercentileValues(ReadOnlySpan<double> sortedRanks, Span<ulong> values,
+        EquivalentValueSelection valueSelection = default)
+    {
+        Accumulate();
+        _accumulator.GetPercentileValues(sortedRanks, values, valueSelection);
+    }
+
     public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles)
     {
         Accumulate();

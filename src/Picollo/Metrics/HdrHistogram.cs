@@ -4,7 +4,7 @@ using System.Runtime.CompilerServices;
 
 namespace Picollo.Metrics;
 
-public abstract partial class HdrHistogram : IDisposable
+public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
 {
     private protected readonly HdrBuckets _buckets;
     protected readonly nuint _firstIndexOffset;
@@ -45,13 +45,8 @@ public abstract partial class HdrHistogram : IDisposable
         }
     }
 
-    /// <summary>
-    /// The total number of observations that fell outside the [<see cref="MinTrackableValue"/>, <see cref="MaxTrackableValue"/>] range.
-    /// </summary>
-    public abstract ulong OverflowCount { get; }
-
-    public abstract int FootprintInBytes { get; }
-
+    
+    
     /// <summary>
     /// Record a single observation of the <paramref name="value"/>.
     /// </summary>
@@ -62,35 +57,9 @@ public abstract partial class HdrHistogram : IDisposable
     /// </summary>
     public abstract void Record(ulong value, uint count);
 
-    /// <summary>
-    /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
-    /// <para />
-    /// If this instance is being updated during this call, then the value may be skewed lower.
-    /// </summary>
-    /// <param name="rank">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
-    /// <param name="valueSelection">A rule to select the equivalent value in a bucket.</param>
-    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    /// <exception cref="InvalidOperationException"></exception>
-    public abstract ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default);
-
-    /// <summary>
-    /// Writes percentile details for the provided sorted percentile ranks into <paramref name="percentiles"/>.
-    /// </summary>
-    /// <param name="sortedRanks">Percentile ranks sorted in ascending order. Values outside [0, 100] are clamped.</param>
-    /// <param name="percentiles">Target buffer that receives percentile results.</param>
-    public abstract void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles);
-
-    /// <summary>
-    /// Returns a <see cref="Percentile"/> struct with bucket and count details.
-    /// </summary>
-    /// <param name="rank"></param>
-    /// <returns></returns>
-    public abstract Percentile GetPercentile(double rank);
-
-    /// <summary>
-    /// Returns <see cref="Bucket"/> details for the given value.
-    /// </summary>
-    public abstract Bucket GetBucket(ulong value);
+    public abstract override void GetPercentileValues(ReadOnlySpan<double> sortedRanks, Span<ulong> values,
+        EquivalentValueSelection valueSelection = default);
+    
 
     public abstract void Reset();
     public abstract void Dispose();

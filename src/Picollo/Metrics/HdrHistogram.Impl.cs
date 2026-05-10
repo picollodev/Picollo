@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Numerics;
 using System.Numerics.Tensors;
 using System.Runtime.CompilerServices;
@@ -48,8 +49,12 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         + 24 // Array obj header + dim + count
         + 8 + 8 + 8 // Data
         + 4 + 4 + 4 // Buckets
-        + Unsafe.SizeOf<TCounter>() // Overflow counter
+        + Unsafe.SizeOf<TCounter>() // OverflowSlot
+        + 8 // MinTrackableValue
         + 8 // MaxTrackableValue
+        + 4 + 4 // OwnerThreadId + ResetCount
+        + 8 //_firstIndexOffset
+        + 8 //Version
     ;
 
     public override void Reset()
@@ -79,14 +84,8 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     {
     }
 
-    /// <summary>
-    /// Record a single observation of the <paramref name="value"/>.
-    /// </summary>
     public sealed override void Record(ulong value) => TAddition.Increment(ref GetRef(value));
 
-    /// <summary>
-    /// Record <paramref name="count"/> observations of the <paramref name="value"/>.
-    /// </summary>
     public sealed override void Record(ulong value, uint count) => TAddition.Add(ref GetRef(value), UlongToT<TCounter>(count));
 
     /// <summary>
@@ -110,22 +109,9 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         if (storageIndex >= (nuint)Data.LongCount)
             return ref OverflowSlot;
 
-        // TODO Remove this when thread-local cleans its own storage after reset
-        // if (typeof(TAddition) == typeof(VolatileAddition))
-        //     Volatile.ReadBarrier();
-
         return ref Data.GetAtUnsafe(storageIndex);
     }
 
-    /// <summary>
-    /// Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/>.
-    /// <para />
-    /// If this instance is being updated during this call, then the value may be skewed lower.
-    /// </summary>
-    /// <param name="rank">A value from 0.0 to 100.0. Values outside this range are clamped.</param>
-    /// <param name="valueSelection">A rule to select the equivalent value in a bucket.</param>
-    /// <returns>Returns the smallest value for which its percentile is greater or equal than the requested <paramref name="rank"/></returns>
-    /// <exception cref="InvalidOperationException"></exception>
     public override ulong GetPercentileValue(double rank, EquivalentValueSelection valueSelection = default)
     {
         Span<double> ranks = stackalloc double[1];
@@ -135,14 +121,39 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         return percentiles[0].GetValue(valueSelection);
     }
 
+    public override void GetPercentileValues(ReadOnlySpan<double> sortedRanks, Span<ulong> values,
+        EquivalentValueSelection valueSelection = default)
+    {
+        if (values.Length < sortedRanks.Length)
+            throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(values));
+
+        if (sortedRanks.IsEmpty)
+            return;
+
+        const int stackallocLimit = 32;
+        Percentile[]? rented = null;
+        Span<Percentile> percentiles = sortedRanks.Length <= stackallocLimit
+            ? stackalloc Percentile[stackallocLimit]
+            : (rented = ArrayPool<Percentile>.Shared.Rent(sortedRanks.Length));
+
+        try
+        {
+            var target = percentiles.Slice(0, sortedRanks.Length);
+            GetPercentiles(sortedRanks, target, Data);
+
+            for (int i = 0; i < sortedRanks.Length; i++)
+                values[i] = target[i].GetValue(valueSelection);
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<Percentile>.Shared.Return(rented);
+        }
+    }
+
     public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles) =>
         GetPercentiles(sortedRanks, percentiles, Data);
 
-    /// <summary>
-    /// Return <see cref="Percentile"/> struct with detailed information about the percentile, counts and the bucket where the percentile is found.
-    /// </summary>
-    /// <param name="rank"></param>
-    /// <returns></returns>
     public override Percentile GetPercentile(double rank)
     {
         Span<double> ranks = stackalloc double[1];
@@ -160,6 +171,9 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
 
         if (sortedRanks.IsEmpty)
             return;
+
+        if (!IsSorted(sortedRanks))
+            throw new ArgumentException("The ranks for percentiles must be sorted.");
 
         var spinner = new SpinWait();
         while (true)
@@ -233,6 +247,17 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         }
 
         return TtoUlong(TensorPrimitives.Sum(data.AsSpan()));
+    }
+
+    internal static bool IsSorted(ReadOnlySpan<double> span)
+    {
+        for (var i = 1; i < span.Length; i++)
+        {
+            if (span[i - 1] > span[i])
+                return false;
+        }
+
+        return true;
     }
 
     // Bad for public API, this should be exposed on the snapshot

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using NUnit.Framework;
 using Picollo.Metrics;
@@ -84,13 +85,13 @@ public class HdrHistogramTests
         bucket100.Count.ShouldBe(1ul);
         bucket100.Start.ShouldBe(100ul);
         bucket100.Step.ShouldBe(1ul);
-        bucket100.Index.ShouldBe(0);
+        bucket100.StorageIndex.ShouldBe(0);
 
         h.Record(150);
         Bucket bucket150 = h.GetBucket(150);
         bucket150.IsOverflowBucket.ShouldBeFalse();
         bucket150.Start.ShouldBe(150ul);
-        bucket150.Index.ShouldBe(50);
+        bucket150.StorageIndex.ShouldBe(50);
         h.GetBucket(150).Count.ShouldBe(1ul);
 
         h.OverflowCount.ShouldBe(2ul);
@@ -98,5 +99,28 @@ public class HdrHistogramTests
         h.GetPercentileValue(0).ShouldBe(100ul);
         h.GetPercentileValue(50).ShouldBe(100ul);
         h.GetPercentileValue(50.01).ShouldBe(150ul);
+    }
+
+    [Test]
+    public void ShouldIterateBuckets()
+    {
+        var h = new HdrHistogram<ulong>(relativeError: 0.01, minTrackableValue: 50, maxTrackableValue: 100);
+        h.Buckets.Count().ShouldBe(51);
+        h.BucketsWithValues.Count().ShouldBe(0);
+
+        for (int i = 0; i < 10; i++)
+        {
+            h.Record(50);
+            h.Buckets.Count().ShouldBe(51);
+            h.BucketsWithValues.Count().ShouldBe(1);    
+        }
+        
+        h.Record(100);
+        h.Buckets.Count().ShouldBe(51);
+        h.BucketsWithValues.Count().ShouldBe(2);
+        
+        h.Record(75);
+        h.Buckets.Count().ShouldBe(51);
+        h.BucketsWithValues.Count().ShouldBe(3);   
     }
 }

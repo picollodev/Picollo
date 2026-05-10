@@ -124,7 +124,7 @@ public struct MilliScope : IDisposable
     }
 }
 
-public static class HdrHistogramExtensions
+public static partial class HdrHistogramExtensions
 {
     public static TickScope GetTickScope(this HdrHistogram histogram) => new(histogram);
     public static NanoScope GetNanoScope(this HdrHistogram histogram) => new(histogram);
