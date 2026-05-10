@@ -59,7 +59,7 @@ public class HdrHistogramBenches
 
     public static void PicolloBench(int runs = 10)
     {
-        Console.WriteLine("# Picollo HdrHistogram");
+        Console.WriteLine("# PicolloBench");
         var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
         Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
 
@@ -75,8 +75,10 @@ public class HdrHistogramBenches
         Console.WriteLine($"# PicolloConcurrentBench: {(threadLocal ? "thread-local" : "interlocked")}");
         Metrics.HdrHistogram h =
             threadLocal
-                ? new ThreadLocalHdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue, TimeSpan.FromMilliseconds(100))
-                : new InterlockedUInt32HdrHistogram((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, maxValue ?? (ulong)MaxValue);
+                ? new ThreadLocalHdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0,
+                    maxValue ?? (ulong)MaxValue, TimeSpan.FromMilliseconds(100))
+                : new InterlockedUInt32HdrHistogram((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0,
+                    maxValue ?? (ulong)MaxValue);
 
         if (!threadLocal)
             Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
@@ -157,7 +159,6 @@ public class HdrHistogramBenches
         {
             sw.Restart();
 
-
             for (int r = 0; r < rounds; r++)
             {
                 foreach (long value in Values)
@@ -222,6 +223,46 @@ public class HdrHistogramBenches
         Thread.Sleep(1000);
         mre.Set();
         Task.WaitAll(tasks);
+        Console.WriteLine();
+    }
+
+    public static void PicolloBucketEnumerationBench(int runs = 10)
+    {
+        Console.WriteLine("# PicolloBucketEnumerationBench");
+        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
+        Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
+
+        PicolloWorkload(h, 1);
+
+        var sw = Stopwatch.StartNew();
+
+        for (int x = 0; x < runs; x++)
+        {
+            sw.Restart();
+
+            ulong manualCount = 0;
+
+            int rounds = Rounds * 100;
+            for (int r = 0; r < rounds; r++)
+            {
+                manualCount = 0UL;
+                foreach (var bucket in h.BucketPercentiles)
+                {
+                    manualCount += bucket.Bucket.Count;
+                }
+            }
+
+            sw.Stop();
+
+            if (manualCount != h.TotalCount)
+                throw new Exception($"manualCount != h.TotalCount");
+
+            var totalOps = rounds;
+            var elapsed = sw.Elapsed;
+            var perOp = elapsed.TotalMicroseconds / totalOps;
+            Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} us");
+        }
+
         Console.WriteLine();
     }
 

@@ -222,6 +222,8 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
             {
                 // Someone else is in Accumulate()/Reset() call.
                 // Skip expensive aggregation and use current data optimistically.
+                // The reads are protected by _accumulator.Version retry loop,
+                // so readers will spin after the skipped lock until another thread finishes.  
                 return;
             }
 
@@ -483,4 +485,12 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
         Accumulate();
         return _accumulator.GetBucket(value);
     }
+
+    internal override HdrHistogram GetSnapshotInternal()
+    {
+        Accumulate();
+        return _accumulator.GetSnapshotInternal();
+    }
+
+    internal override Bucket GetBucketAtStorageIndex(nuint storageIndex) => _accumulator.GetBucketAtStorageIndex(storageIndex);
 }

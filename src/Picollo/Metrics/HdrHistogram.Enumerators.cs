@@ -1,45 +1,56 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 
 namespace Picollo.Metrics;
 
 public readonly struct Buckets : IEnumerable<Bucket>
 {
-    private readonly HdrHistogram _histogram;
+    private readonly HdrHistogram? _histogram;
     private readonly bool _skipEmpty;
 
-    public Buckets(HdrHistogram histogram, bool skipEmpty = false)
+    internal Buckets(HdrHistogram histogram, bool skipEmpty = false)
     {
         _histogram = histogram;
         _skipEmpty = skipEmpty;
     }
 
-    public BucketsEnumerator GetEnumerator() => new(_histogram, _skipEmpty);
+    public BucketsEnumerator GetEnumerator() => new(_histogram?.GetSnapshotInternal(), _skipEmpty);
     IEnumerator<Bucket> IEnumerable<Bucket>.GetEnumerator() => GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
     public struct BucketsEnumerator : IEnumerator<Bucket>
     {
-        private readonly HdrHistogram _histogram;
+        private HdrHistogram? _snapshot;
         private readonly bool _skipEmpty;
         private Bucket _current;
+        private readonly long _version;
 
-        public BucketsEnumerator(HdrHistogram histogram, bool skipEmpty = false)
+        internal BucketsEnumerator(HdrHistogram? snapshot, bool skipEmpty = false)
         {
-            _histogram = histogram;
+            _snapshot = snapshot;
             _skipEmpty = skipEmpty;
+            _version = snapshot?.Version ?? 0;
         }
 
         public bool MoveNext()
         {
             do
             {
-                var nextValue = _current.IsValid ? _current.NextBucketStart : _histogram.MinTrackableValue;
+                HdrHistogram? histogram = _snapshot;
+
+                if (histogram == null! || _version != histogram.Version)
+                    throw new InvalidOperationException("Using a disposed or invalid Buckets enumerator.");
 
                 if (_current.IsOverflowBucket) // The first one is invalid, but not overflow
                     return false;
 
-                _current = _histogram.GetBucket(nextValue);
+                var currentStorageIndex = _current.IsValid ? (nuint)_current.StorageIndex + 1 : 0;
+
+                if (currentStorageIndex >= (nuint)histogram.StorageLength)
+                    return false;
+
+                _current = histogram.GetBucketAtStorageIndex(currentStorageIndex);
 
             } while (_skipEmpty && _current.Count == 0);
 
@@ -54,73 +65,63 @@ public readonly struct Buckets : IEnumerable<Bucket>
 
         public void Dispose()
         {
+            _snapshot?.Dispose();
+            _snapshot = null!;
         }
     }
 }
 
-public readonly struct Percentiles : IEnumerable<Percentile>
+public readonly struct BucketPercentiles : IEnumerable<Percentile>
 {
-    private readonly HdrHistogram _histogram;
+    private readonly HdrHistogram? _histogram;
     private readonly bool _skipEmpty;
 
-    public Percentiles(HdrHistogram histogram, bool skipEmpty = false)
+    internal BucketPercentiles(HdrHistogram histogram, bool skipEmpty = false)
     {
         _histogram = histogram;
         _skipEmpty = skipEmpty;
     }
 
-    public PercentilesEnumerator GetEnumerator() => new(_histogram, _skipEmpty);
+    public BucketPercentilesEnumerator GetEnumerator() => new(_histogram?.GetSnapshotInternal(), _skipEmpty);
     IEnumerator<Percentile> IEnumerable<Percentile>.GetEnumerator() => GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    public struct PercentilesEnumerator : IEnumerator<Percentile>
+    public struct BucketPercentilesEnumerator : IEnumerator<Percentile>
     {
-        private readonly HdrHistogram _histogram;
-        private readonly bool _skipEmpty;
+        private Buckets.BucketsEnumerator _buckets;
         private readonly ulong _totalCount;
-        private Bucket _bucket;
         private ulong _runningCount;
         private Percentile _current;
 
-        public PercentilesEnumerator(HdrHistogram histogram, bool skipEmpty = false)
+        internal BucketPercentilesEnumerator(HdrHistogram? snapshot, bool skipEmpty = false)
         {
-            _histogram = histogram;
-            _skipEmpty = skipEmpty;
-            _totalCount = histogram.TotalCount;
+            _buckets = new Buckets.BucketsEnumerator(snapshot, skipEmpty);
+            _totalCount = snapshot?.TotalCount ?? 0;
         }
 
         public bool MoveNext()
         {
-            do
-            {
-                var nextValue = _bucket.IsValid ? _bucket.NextBucketStart : _histogram.MinTrackableValue;
-
-                if (_bucket.IsOverflowBucket) // The first one is invalid, but not overflow
-                    return false;
-
-                _bucket = _histogram.GetBucket(nextValue);
-            } while (_skipEmpty && _bucket.Count == 0);
-
-            if (!_bucket.IsValid)
+            if (!_buckets.MoveNext())
                 return false;
 
-            _runningCount += _bucket.Count;
+            var bucket = _buckets.Current;
+            _runningCount += bucket.Count;
 
-            ulong targetCount = _bucket.Count > 0
-                ? _runningCount - _bucket.Count / 2
+            ulong targetCount = bucket.Count > 0
+                ? _runningCount - bucket.Count / 2
                 : _runningCount;
 
             double rank = _totalCount > 0
                 ? (double)targetCount / _totalCount * 100.0
                 : 0.0;
 
-            _current = new Percentile(rank, _bucket, targetCount, _runningCount, _totalCount);
+            _current = new Percentile(rank, bucket, targetCount, _runningCount, _totalCount);
             return true;
         }
 
         public void Reset()
         {
-            _bucket = default;
+            _buckets.Reset();
             _runningCount = 0;
             _current = default;
         }
@@ -129,8 +130,6 @@ public readonly struct Percentiles : IEnumerable<Percentile>
 
         object? IEnumerator.Current => _current;
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => _buckets.Dispose();
     }
 }

@@ -7,8 +7,8 @@ namespace Picollo.Metrics;
 
 public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
 {
-    internal readonly HdrBuckets LogicalBuckets;
-    protected readonly nuint _firstIndexOffset;
+    internal HdrBuckets LogicalBuckets;
+    protected nuint _firstIndexOffset;
     internal long Version;
 
     public ulong MinTrackableValue { get; protected set; }
@@ -65,7 +65,10 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
     public abstract void Reset();
     public abstract void Dispose();
 
-
+    internal abstract Bucket GetBucketAtStorageIndex(nuint storageIndex);
+    
+    internal abstract HdrHistogram GetSnapshotInternal();
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ulong TtoUlong<TCounter>(TCounter value) where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>
     {

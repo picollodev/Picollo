@@ -5,13 +5,6 @@ namespace Picollo.Metrics;
 
 public class HdrHistogramSnapshot : ReadOnlyHdrHistogram 
 {
-    internal struct DataSnapshot
-    {
-        private HdrBuckets LogicalBuckets;
-        private ulong TotalCount;
-        private ulong OverflowCount;
-    }
-    
     public HdrHistogram Histogram { get; }
     private long _version;
     public DateTime Timestamp { get; private set; }

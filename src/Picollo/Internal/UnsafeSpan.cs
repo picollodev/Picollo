@@ -68,6 +68,8 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     public nint LongCount => _itemCount;
     public nint ByteLength => _itemCount * Unsafe.SizeOf<T>();
 
+    internal T[]? OwnerArray => _owner as T[];
+    
     public ref T DataReference
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

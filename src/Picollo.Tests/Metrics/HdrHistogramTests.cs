@@ -63,10 +63,9 @@ public class HdrHistogramTests
     [Test]
     public void GetPercentiles()
     {
-        
+
     }
-    
-    
+
     [Test]
     public void OverflowCountIncreasesForValuesOutsideRange()
     {
@@ -113,21 +112,54 @@ public class HdrHistogramTests
     {
         var h = new HdrHistogram<ulong>(relativeError: 0.01, minTrackableValue: 50, maxTrackableValue: 100);
         h.Buckets.Count().ShouldBe(51);
+        h.BucketPercentiles.Count().ShouldBe(51);
         h.BucketsWithValues.Count().ShouldBe(0);
+        h.BucketPercentilesWithValues.Count().ShouldBe(0);
 
         for (int i = 0; i < 10; i++)
         {
             h.Record(50);
             h.Buckets.Count().ShouldBe(51);
-            h.BucketsWithValues.Count().ShouldBe(1);    
+            h.BucketPercentiles.Count().ShouldBe(51);
+            h.BucketsWithValues.Count().ShouldBe(1);
+            h.BucketPercentilesWithValues.Count().ShouldBe(1);
         }
-        
+
         h.Record(100);
         h.Buckets.Count().ShouldBe(51);
+        h.BucketPercentiles.Count().ShouldBe(51);
         h.BucketsWithValues.Count().ShouldBe(2);
-        
+        h.BucketPercentilesWithValues.Count().ShouldBe(2);
+
         h.Record(75);
         h.Buckets.Count().ShouldBe(51);
-        h.BucketsWithValues.Count().ShouldBe(3);   
+        h.BucketPercentiles.Count().ShouldBe(51);
+        h.BucketsWithValues.Count().ShouldBe(3);
+        h.BucketPercentilesWithValues.Count().ShouldBe(3);
+
+        Should.Throw<InvalidOperationException>(() =>
+        {
+            _ = (new Buckets()).Count();
+        });
+
+        Should.Throw<InvalidOperationException>(() =>
+        {
+            var e = h.Buckets.GetEnumerator();
+            e.Dispose();
+            e.MoveNext();
+        });
+
+        Should.Throw<InvalidOperationException>(() =>
+        {
+            _ = (new BucketPercentiles()).Count();
+        });
+
+        Should.Throw<InvalidOperationException>(() =>
+        {
+            var e = h.BucketPercentiles.GetEnumerator();
+            e.Dispose();
+            e.MoveNext();
+        });
+
     }
 }

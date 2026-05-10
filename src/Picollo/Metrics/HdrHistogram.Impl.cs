@@ -27,6 +27,10 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     internal volatile int OwnerThreadId;
     internal volatile int ResetCount;
 
+    private HdrHistogram()
+    {
+    }
+
     internal HdrHistogram(double relativeError, ulong minTrackableValue, ulong maxTrackableValue)
         : base(relativeError, minTrackableValue, maxTrackableValue)
     {
@@ -82,10 +86,6 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         Data.AsSpan().Clear();
     }
 
-    public override void Dispose()
-    {
-    }
-
     public sealed override void Record(ulong value) => TAddition.Increment(ref GetRef(value));
 
     public sealed override void Record(ulong value, uint count) => TAddition.Add(ref GetRef(value), UlongToT<TCounter>(count));
@@ -124,6 +124,14 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         return new Bucket(start, step, count, (int)storageIndex);
     }
 
+    internal override Bucket GetBucketAtStorageIndex(nuint storageIndex)
+    {
+        var count = TtoUlong(Data[storageIndex]);
+        var logicalIndex = _firstIndexOffset + storageIndex;
+        var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
+        return new Bucket(start, step, count, (int)storageIndex);
+    }
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref TCounter GetRef(ulong value)
     {
@@ -314,10 +322,43 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         }
     }
 
-    private TResult ReadConsistent<TResult, TReader>()
-        where TReader : struct, IReadOperation<TResult>
+    public override void Dispose()
     {
-        TResult result = default(TResult);
+        if (OwnerThreadId == int.MinValue)
+        {
+            Interlocked.Add(ref Version, 2); // Invalidate enumerators
+            
+            var array = Data.OwnerArray;
+            Data = default;
+            
+            if (array is not null)
+                ArrayPool<TCounter>.Shared.Return(array, false);
+            
+            // A public instance will never hit the path as it's not possible to set OwnerThreadId sentinel publicly
+            Interlocked.CompareExchange(ref s_pool, this, null);
+        }
+    }
+
+    // A pool of 1, just to reduce read allocs
+    private static HdrHistogram<TCounter, TAddition>? s_pool;
+
+    internal override HdrHistogram GetSnapshotInternal() => DoGetSnapshotInternal();
+
+    private HdrHistogram<TCounter, TAddition> DoGetSnapshotInternal()
+    {
+        var instance = Interlocked.Exchange(ref s_pool, null) ?? new HdrHistogram<TCounter, TAddition>();
+        instance.LogicalBuckets = LogicalBuckets;
+        instance._firstIndexOffset = _firstIndexOffset;
+        Interlocked.Add(ref instance.Version, 2);
+        instance.MinTrackableValue = MinTrackableValue;
+        instance.MaxTrackableValue = MaxTrackableValue;
+        instance.OverflowSlot = default;
+        instance.OwnerThreadId = int.MinValue;
+        instance.ResetCount = ResetCount;
+
+        var array = ArrayPool<TCounter>.Shared.Rent(Data.Count);
+        instance.Data = new UnsafeSpan<TCounter>(array, 0, Data.Count);
+
         var spinner = new SpinWait();
 
         while (true)
@@ -329,18 +370,13 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                 continue;
             }
 
-            // work
-            result = TReader.Read(this);
+            Data.AsSpan().CopyTo(instance.Data.AsSpan());
+            instance.OverflowSlot = OverflowSlot;
 
             if (version == Volatile.Read(ref Version))
-                return result;
+                return instance;
 
             spinner.Reset();
         }
-    }
-
-    private interface IReadOperation<TResult>
-    {
-        static abstract TResult Read(HdrHistogram<TCounter, TAddition> histogram);
     }
 }

@@ -13,5 +13,15 @@ public static partial class HdrHistogramExtensions
         /// Returns an enumerable over non-empty buckets in the <paramref name="histogram"/>. 
         /// </summary>
         public Buckets BucketsWithValues => new(histogram, true);
+
+        /// <summary>
+        /// Returns an enumerable over each bucket percentile in the <paramref name="histogram"/>, including empty buckets.
+        /// </summary>
+        public BucketPercentiles BucketPercentiles => new(histogram);
+
+        /// <summary>
+        /// Returns an enumerable over non-empty bucket percentiles in the <paramref name="histogram"/>.
+        /// </summary>
+        public BucketPercentiles BucketPercentilesWithValues => new(histogram, true);
     }
 }
