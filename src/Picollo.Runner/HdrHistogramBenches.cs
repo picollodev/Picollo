@@ -76,7 +76,7 @@ public class HdrHistogramBenches
 
         for (int i = 0; i < 100_000_000; i++)
         {
-            h.Record(22050);
+            h.Record(23050);
         }
         
         

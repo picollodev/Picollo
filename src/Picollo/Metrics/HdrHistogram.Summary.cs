@@ -282,29 +282,29 @@ public class HdrHistogramSummary
         int thisValueWidth = Math.Max(thisName.Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(thisMean.Length, Math.Max(thisStDev.Length, Math.Max(thisPrecision.Length, thisTotal.Length)))));
         int otherValueWidth = Math.Max(otherName.Length, Math.Max(other.P100.Value.ToString("N0").Length, Math.Max(otherMean.Length, Math.Max(otherStDev.Length, Math.Max(otherPrecision.Length, otherTotal.Length)))));
 
-        string deltaAtP100 = other.P100.Value == 0
-            ? (P100.Value == 0 ? "+0.0%" : "n/a")
-            : $"{((double)P100.Value - other.P100.Value) / other.P100.Value * 100.0:+0.0;-0.0;0.0}%";
-        string deltaAtMean = other.Mean == 0
-            ? (Mean == 0 ? "+0.0%" : "n/a")
-            : $"{(Mean - other.Mean) / other.Mean * 100.0:+0.0;-0.0;0.0}%";
-        string deltaAtStDev = other.StDev == 0
-            ? (StDev == 0 ? "+0.0%" : "n/a")
-            : $"{(StDev - other.StDev) / other.StDev * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtP100 = P100.Value == 0
+            ? (other.P100.Value == 0 ? "+0.0%" : "n/a")
+            : $"{((double)other.P100.Value - P100.Value) / P100.Value * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtMean = Mean == 0
+            ? (other.Mean == 0 ? "+0.0%" : "n/a")
+            : $"{(other.Mean - Mean) / Mean * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtStDev = StDev == 0
+            ? (other.StDev == 0 ? "+0.0%" : "n/a")
+            : $"{(other.StDev - StDev) / StDev * 100.0:+0.0;-0.0;0.0}%";
         double thisPrecisionRaw = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
         double otherPrecisionRaw = 100 * 0.5 / other.P0.Bucket.HdrBucket.BlockSize;
-        string deltaAtPrecision = otherPrecisionRaw == 0
-            ? (thisPrecisionRaw == 0 ? "+0.0%" : "n/a")
-            : $"{(thisPrecisionRaw - otherPrecisionRaw) / otherPrecisionRaw * 100.0:+0.0;-0.0;0.0}%";
-        string deltaAtTotal = other.TotalCount == 0
-            ? (TotalCount == 0 ? "+0.0%" : "n/a")
-            : $"{((double)TotalCount - other.TotalCount) / other.TotalCount * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtPrecision = thisPrecisionRaw == 0
+            ? (otherPrecisionRaw == 0 ? "+0.0%" : "n/a")
+            : $"{(otherPrecisionRaw - thisPrecisionRaw) / thisPrecisionRaw * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtTotal = TotalCount == 0
+            ? (other.TotalCount == 0 ? "+0.0%" : "n/a")
+            : $"{((double)other.TotalCount - TotalCount) / TotalCount * 100.0:+0.0;-0.0;0.0}%";
         string maxDeltaValue = deltaAtP100;
         if (deltaAtMean.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtMean;
         if (deltaAtStDev.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtStDev;
         if (deltaAtPrecision.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtPrecision;
         if (deltaAtTotal.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtTotal;
-        int deltaWidth = Math.Max("Delta".Length, maxDeltaValue.Length);
+        int deltaWidth = Math.Max("Δ%".Length, maxDeltaValue.Length);
 
         static string R(string s, int w) => s.PadLeft(w);
         static string L(string s, int w) => s.PadRight(w);
@@ -328,7 +328,7 @@ public class HdrHistogramSummary
         string separatorDelta = new string('-', deltaWidth);
 
         Console.WriteLine($"### {title ?? "Histogram summary delta"}");
-        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Delta", deltaWidth)} |");
+        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Δ%", deltaWidth)} |");
         Console.WriteLine($"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(thisValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(otherValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(deltaWidth, leftAligned: false, rightAligned: true)} |");
 
         for (int i = 0; i < PercentilesReadOnly.Length; i++)
@@ -339,9 +339,9 @@ public class HdrHistogramSummary
             string rankText = thisPercentile.Rank.ToString("0.######");
             string thisValue = thisPercentile.Value.ToString("N0");
             string otherValue = otherPercentile.Value.ToString("N0");
-            string delta = otherPercentile.Value == 0
-                ? (thisPercentile.Value == 0 ? "+0.0%" : "n/a")
-                : $"{((double)thisPercentile.Value - otherPercentile.Value) / otherPercentile.Value * 100.0:+0.0;-0.0;0.0}%";
+            string delta = thisPercentile.Value == 0
+                ? (otherPercentile.Value == 0 ? "+0.0%" : "n/a")
+                : $"{((double)otherPercentile.Value - thisPercentile.Value) / thisPercentile.Value * 100.0:+0.0;-0.0;0.0}%";
 
             Console.WriteLine($"| {L(rankText, percentileColumnWidth)} | {R(thisValue, thisValueWidth)} | {R(otherValue, otherValueWidth)} | {R(delta, deltaWidth)} |");
         }
