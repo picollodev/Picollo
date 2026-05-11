@@ -213,6 +213,8 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
 
         return instance;
     }
+
+    public override HdrHistogramSnapshot GetSnapshot() => new(this, GetSnapshotInternal());
     
     private void GetPercentilesAndStats(ReadOnlySpan<double> sortedRanks,
         Span<Percentile> percentiles,
@@ -391,7 +393,39 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     // A pool of 1, just to reduce read allocs
     private static HdrHistogram<TCounter, TAddition>? s_pool;
 
-    internal override HdrHistogram GetSnapshotInternal() => DoGetSnapshotInternal();
+    internal override HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null)
+    {
+        var snapshot = DoGetSnapshotInternal();
+
+        if (baseHistogram is null)
+            return snapshot;
+
+        if (baseHistogram is not HdrHistogram<TCounter, TAddition> baseSnapshot)
+        {
+            snapshot.Dispose();
+            throw new ArgumentException("Base snapshot type is incompatible with this histogram.", nameof(baseHistogram));
+        }
+
+        if (baseSnapshot._firstIndexOffset != snapshot._firstIndexOffset
+            || baseSnapshot.Data.Count != snapshot.Data.Count
+            || baseSnapshot.MinTrackableValue != snapshot.MinTrackableValue
+            || baseSnapshot.MaxTrackableValue != snapshot.MaxTrackableValue
+            || baseSnapshot.HdrBuckets.RelativeError != snapshot.HdrBuckets.RelativeError)
+        {
+            snapshot.Dispose();
+            throw new ArgumentException("Base snapshot shape is incompatible with this histogram.", nameof(baseHistogram));
+        }
+
+        if (snapshot.ResetCount != baseSnapshot.ResetCount)
+            return snapshot;
+
+        snapshot.OverflowSlot -= baseSnapshot.OverflowSlot;
+
+        for (nint i = 0; i < snapshot.Data.LongCount; i++)
+            snapshot.Data.GetAtUnsafe(i) -= baseSnapshot.Data.GetAtUnsafe(i);
+
+        return snapshot;
+    }
 
     private HdrHistogram<TCounter, TAddition> DoGetSnapshotInternal()
     {

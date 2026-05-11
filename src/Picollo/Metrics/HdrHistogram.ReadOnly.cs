@@ -70,4 +70,6 @@ public abstract class ReadOnlyHdrHistogram
     public abstract Bucket GetBucket(ulong value);
 
     public abstract HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null);
+
+    public abstract HdrHistogramSnapshot GetSnapshot();
 }

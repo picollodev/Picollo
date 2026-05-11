@@ -64,9 +64,11 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
     public abstract void Reset();
     public abstract void Dispose();
 
+    public abstract override HdrHistogramSnapshot GetSnapshot();
+
     internal abstract Bucket GetBucketAtStorageIndex(nuint storageIndex);
     
-    internal abstract HdrHistogram GetSnapshotInternal();
+    internal abstract HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null);
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ulong TtoUlong<TCounter>(TCounter value) where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>

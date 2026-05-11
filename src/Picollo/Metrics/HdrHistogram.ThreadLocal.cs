@@ -488,10 +488,16 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
         return _accumulator.GetSummary(reuseInstance);
     }
 
-    internal override HdrHistogram GetSnapshotInternal()
+    public override HdrHistogramSnapshot GetSnapshot()
     {
         Accumulate();
-        return _accumulator.GetSnapshotInternal();
+        return new HdrHistogramSnapshot(this, _accumulator.GetSnapshotInternal());
+    }
+
+    internal override HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null)
+    {
+        Accumulate();
+        return _accumulator.GetSnapshotInternal(baseHistogram);
     }
 
     internal override Bucket GetBucketAtStorageIndex(nuint storageIndex) => _accumulator.GetBucketAtStorageIndex(storageIndex);
