@@ -223,8 +223,8 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         if (percentiles.Length < sortedRanks.Length)
             throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
 
-        if (!IsSorted(sortedRanks))
-            throw new ArgumentException("The ranks for percentiles must be sorted.");
+        if (!IsValid(sortedRanks))
+            throw new ArgumentException("The ranks for percentiles must be strictly increasing and each value must be in the [0, 100] range.", nameof(sortedRanks));
 
         totalCount = 0;
         double weightedSum = 0;
@@ -284,11 +284,6 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
             while (rankIndex >= 0)
             {
                 double rank = sortedRanks[rankIndex];
-                if (double.IsNaN(rank))
-                    rank = 0.0;
-
-                rank = Math.Clamp(rank, 0.0, 100.0);
-
                 ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
                 targetCount = Math.Clamp(targetCount, 1UL, totalCount);
 
@@ -330,13 +325,19 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         return TtoUlong(TensorPrimitives.Sum(data.AsSpan()));
     }
 
-    internal static bool IsSorted(ReadOnlySpan<double> span)
+    internal static bool IsValid(ReadOnlySpan<double> span)
     {
         for (var i = 1; i < span.Length; i++)
         {
-            if (span[i - 1] > span[i])
+            if (double.IsNaN(span[i - 1]) || double.IsInfinity(span[i - 1]) || span[i - 1] < 0 || span[i - 1] > 100)
+                return false;
+
+            if (span[i - 1] >= span[i])
                 return false;
         }
+
+        if (!span.IsEmpty && (double.IsNaN(span[^1]) || double.IsInfinity(span[^1]) || span[^1] < 0 || span[^1] > 100))
+            return false;
 
         return true;
     }

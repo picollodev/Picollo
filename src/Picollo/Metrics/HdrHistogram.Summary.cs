@@ -74,7 +74,7 @@ public class HdrHistogramSummary
         private Percentile _element0;
     }
 
-    public void PrettyPrint()
+    private void PrettyPrintSonnet()
     {
         var relativePrecisionPct = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
 
@@ -98,8 +98,8 @@ public class HdrHistogramSummary
             EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0} ",
             _                                   => $"± {P100.Bucket.Step / 2:N0} ",
         };
-        int wPlusMinus = Math.Max("StDev: ".Length, maxPlusMinus.Length);
-        int wCount     = Math.Max("Count".Length,  Math.Max(TotalCount.ToString("N0").Length, StDev.ToString("N2").Length));
+        int wPlusMinus = Math.Max("StDev: ".Length, Math.Max(maxPlusMinus.Length, "Total:".Length));
+        int wCount     = Math.Max("Count".Length, Math.Max(TotalCount.ToString("N0").Length, StDev.ToString("N2").Length));
 
         int totalWidth = 11 + wValue + 2 + wPlusMinus + wCount;
 
@@ -137,7 +137,220 @@ public class HdrHistogramSummary
 
         // Precision row
         string precValue = $"{relativePrecisionPct:0.0###}%";
-        Console.WriteLine($"{"Precision:",colPercentile}{R(precValue, wValue)}");
+        Console.WriteLine($"{"Precision:",colPercentile}{R(precValue, wValue)}  {L("Total:", wPlusMinus)}{R(TotalCount.ToString("N0"), wCount)}");
         Console.WriteLine(new string('-', totalWidth));
+    }
+
+    private void PrettyPrintGpt54()
+    {
+        var relativePrecisionPct = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
+        var selection = Percentile.DefaultEquivalentValueSelection;
+
+        const int percentileColumnWidth = 11;
+
+        string maxValue = P100.Value.ToString("N0");
+        string meanValue = Mean.ToString("N2");
+        int valueWidth = Math.Max("Value".Length, Math.Max(maxValue.Length, meanValue.Length));
+
+        string maxPlusMinus = selection switch
+        {
+            EquivalentValueSelection.UpperBound => $"-{P100.Bucket.Step:N0} ",
+            EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0} ",
+            _ => $"± {P100.Bucket.Step / 2:N0} ",
+        };
+        int plusMinusWidth = Math.Max("StDev: ".Length, Math.Max("Total:".Length, maxPlusMinus.Length));
+
+        string totalCountValue = TotalCount.ToString("N0");
+        string stDevValue = StDev.ToString("N2");
+        int countWidth = Math.Max("Count".Length, Math.Max(totalCountValue.Length, stDevValue.Length));
+
+        int totalWidth = percentileColumnWidth + valueWidth + 2 + plusMinusWidth + countWidth;
+        string divider = new('-', totalWidth);
+
+        static string R(string s, int w) => s.PadLeft(w);
+        static string L(string s, int w) => s.PadRight(w);
+
+        Console.WriteLine(divider);
+        Console.WriteLine($"{L("Percentile", percentileColumnWidth)}{R("Value", valueWidth)}  {L("±", plusMinusWidth)}{R("Count", countWidth)}");
+        Console.WriteLine(divider);
+
+        foreach (ref readonly var percentile in PercentilesReadOnly)
+        {
+            string rankText = percentile.Rank.ToString("0.######");
+            string valueText = percentile.Value.ToString("N0");
+            string plusMinusText = selection switch
+            {
+                EquivalentValueSelection.UpperBound => $"-{percentile.Bucket.Step:N0}",
+                EquivalentValueSelection.LowerBound => $"+{percentile.Bucket.Step:N0}",
+                _ => $"±{percentile.Bucket.Step / 2:N0}",
+            };
+            string countText = percentile.Count.ToString("N0");
+
+            Console.WriteLine($"{L(rankText, percentileColumnWidth)}{R(valueText, valueWidth)}  {L(plusMinusText, plusMinusWidth)}{R(countText, countWidth)}");
+        }
+
+        Console.WriteLine(divider);
+        Console.WriteLine($"{L("Mean:", percentileColumnWidth)}{R(meanValue, valueWidth)}  {L("StDev:", plusMinusWidth)}{R(stDevValue, countWidth)}");
+
+        string precisionValue = $"{relativePrecisionPct:0.0###}%";
+        Console.WriteLine($"{L("Precision:", percentileColumnWidth)}{R(precisionValue, valueWidth)}  {L("Total:", plusMinusWidth)}{R(totalCountValue, countWidth)}");
+        Console.WriteLine(divider);
+    }
+
+    public void PrettyPrint(string? title = null)
+    {
+        var relativePrecisionPct = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
+        var selection = Percentile.DefaultEquivalentValueSelection;
+
+        string meanValue = Mean.ToString("N2");
+        string stDevValue = StDev.ToString("N2");
+        string totalCountValue = TotalCount.ToString("N0");
+        string precisionValue = $"{relativePrecisionPct:0.0###}%";
+
+        int percentileColumnWidth = Math.Max("Percentile".Length, "Precision:".Length);
+        int valueWidth = Math.Max("Value".Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(meanValue.Length, precisionValue.Length)));
+
+        string maxPlusMinus = selection switch
+        {
+            EquivalentValueSelection.UpperBound => $"-{P100.Bucket.Step:N0}",
+            EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0}",
+            _ => $"±{P100.Bucket.Step / 2:N0}",
+        };
+        int plusMinusWidth = Math.Max("StDev:".Length, Math.Max("Total:".Length, maxPlusMinus.Length));
+        int countWidth = Math.Max("Count".Length, Math.Max(stDevValue.Length, totalCountValue.Length));
+        static string R(string s, int w) => s.PadLeft(w);
+        static string L(string s, int w) => s.PadRight(w);
+        static string MarkdownSeparatorCell(int width, bool leftAligned, bool rightAligned)
+        {
+            width = Math.Max(width, 3);
+
+            if (leftAligned && rightAligned)
+                return ":" + new string('-', Math.Max(width - 2, 1)) + ":";
+            if (leftAligned)
+                return ":" + new string('-', Math.Max(width - 1, 2));
+            if (rightAligned)
+                return new string('-', Math.Max(width - 1, 2)) + ":";
+
+            return new string('-', width);
+        }
+
+        string separatorPercentile = new string('-', percentileColumnWidth);
+        string separatorValue = new string('-', valueWidth);
+        string separatorPlusMinus = new string('-', plusMinusWidth);
+        string separatorCount = new string('-', countWidth);
+
+        Console.WriteLine($"### {title ?? "Histogram summary"}");
+        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R("Value", valueWidth)} | {L("±", plusMinusWidth)} | {R("Count", countWidth)} |");
+        Console.WriteLine($"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(valueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(plusMinusWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(countWidth, leftAligned: false, rightAligned: true)} |");
+
+        foreach (ref readonly var percentile in PercentilesReadOnly)
+        {
+            string rankText = percentile.Rank.ToString("0.######");
+            string valueText = percentile.Value.ToString("N0");
+            string plusMinusText = selection switch
+            {
+                EquivalentValueSelection.UpperBound => $"-{percentile.Bucket.Step:N0}",
+                EquivalentValueSelection.LowerBound => $"+{percentile.Bucket.Step:N0}",
+                _ => $"±{percentile.Bucket.Step / 2:N0}",
+            };
+            string countText = percentile.Count.ToString("N0");
+
+            Console.WriteLine($"| {L(rankText, percentileColumnWidth)} | {R(valueText, valueWidth)} | {L(plusMinusText, plusMinusWidth)} | {R(countText, countWidth)} |");
+        }
+
+        Console.WriteLine($"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorValue, valueWidth)} | {L(separatorPlusMinus, plusMinusWidth)} | {L(separatorCount, countWidth)} |");
+        Console.WriteLine($"| {L("Mean:", percentileColumnWidth)} | {R(meanValue, valueWidth)} | {L("StDev:", plusMinusWidth)} | {R(stDevValue, countWidth)} |");
+        Console.WriteLine($"| {L("Precision:", percentileColumnWidth)} | {R(precisionValue, valueWidth)} | {L("Total:", plusMinusWidth)} | {R(totalCountValue, countWidth)} |");
+        Console.WriteLine();
+    }
+
+    public void PrettyPrintDiff(HdrHistogramSummary other, string? title = null, string thisName = "This", string otherName = "Other")
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        var thisPrecision = $"{100 * 0.5 / P0.Bucket.HdrBucket.BlockSize:0.0###}%";
+        var otherPrecision = $"{100 * 0.5 / other.P0.Bucket.HdrBucket.BlockSize:0.0###}%";
+
+        string thisMean = Mean.ToString("N2");
+        string otherMean = other.Mean.ToString("N2");
+        string thisStDev = StDev.ToString("N2");
+        string otherStDev = other.StDev.ToString("N2");
+        string thisTotal = TotalCount.ToString("N0");
+        string otherTotal = other.TotalCount.ToString("N0");
+
+        int percentileColumnWidth = Math.Max("Percentile".Length, "Precision:".Length);
+        int thisValueWidth = Math.Max(thisName.Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(thisMean.Length, Math.Max(thisStDev.Length, Math.Max(thisPrecision.Length, thisTotal.Length)))));
+        int otherValueWidth = Math.Max(otherName.Length, Math.Max(other.P100.Value.ToString("N0").Length, Math.Max(otherMean.Length, Math.Max(otherStDev.Length, Math.Max(otherPrecision.Length, otherTotal.Length)))));
+
+        string deltaAtP100 = other.P100.Value == 0
+            ? (P100.Value == 0 ? "+0.0%" : "n/a")
+            : $"{((double)P100.Value - other.P100.Value) / other.P100.Value * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtMean = other.Mean == 0
+            ? (Mean == 0 ? "+0.0%" : "n/a")
+            : $"{(Mean - other.Mean) / other.Mean * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtStDev = other.StDev == 0
+            ? (StDev == 0 ? "+0.0%" : "n/a")
+            : $"{(StDev - other.StDev) / other.StDev * 100.0:+0.0;-0.0;0.0}%";
+        double thisPrecisionRaw = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
+        double otherPrecisionRaw = 100 * 0.5 / other.P0.Bucket.HdrBucket.BlockSize;
+        string deltaAtPrecision = otherPrecisionRaw == 0
+            ? (thisPrecisionRaw == 0 ? "+0.0%" : "n/a")
+            : $"{(thisPrecisionRaw - otherPrecisionRaw) / otherPrecisionRaw * 100.0:+0.0;-0.0;0.0}%";
+        string deltaAtTotal = other.TotalCount == 0
+            ? (TotalCount == 0 ? "+0.0%" : "n/a")
+            : $"{((double)TotalCount - other.TotalCount) / other.TotalCount * 100.0:+0.0;-0.0;0.0}%";
+        string maxDeltaValue = deltaAtP100;
+        if (deltaAtMean.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtMean;
+        if (deltaAtStDev.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtStDev;
+        if (deltaAtPrecision.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtPrecision;
+        if (deltaAtTotal.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtTotal;
+        int deltaWidth = Math.Max("Delta".Length, maxDeltaValue.Length);
+
+        static string R(string s, int w) => s.PadLeft(w);
+        static string L(string s, int w) => s.PadRight(w);
+        static string MarkdownSeparatorCell(int width, bool leftAligned, bool rightAligned)
+        {
+            width = Math.Max(width, 3);
+
+            if (leftAligned && rightAligned)
+                return ":" + new string('-', Math.Max(width - 2, 1)) + ":";
+            if (leftAligned)
+                return ":" + new string('-', Math.Max(width - 1, 2));
+            if (rightAligned)
+                return new string('-', Math.Max(width - 1, 2)) + ":";
+
+            return new string('-', width);
+        }
+
+        string separatorPercentile = new string('-', percentileColumnWidth);
+        string separatorThis = new string('-', thisValueWidth);
+        string separatorOther = new string('-', otherValueWidth);
+        string separatorDelta = new string('-', deltaWidth);
+
+        Console.WriteLine($"### {title ?? "Histogram summary delta"}");
+        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Delta", deltaWidth)} |");
+        Console.WriteLine($"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(thisValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(otherValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(deltaWidth, leftAligned: false, rightAligned: true)} |");
+
+        for (int i = 0; i < PercentilesReadOnly.Length; i++)
+        {
+            ref readonly var thisPercentile = ref PercentilesReadOnly[i];
+            ref readonly var otherPercentile = ref other.PercentilesReadOnly[i];
+
+            string rankText = thisPercentile.Rank.ToString("0.######");
+            string thisValue = thisPercentile.Value.ToString("N0");
+            string otherValue = otherPercentile.Value.ToString("N0");
+            string delta = otherPercentile.Value == 0
+                ? (thisPercentile.Value == 0 ? "+0.0%" : "n/a")
+                : $"{((double)thisPercentile.Value - otherPercentile.Value) / otherPercentile.Value * 100.0:+0.0;-0.0;0.0}%";
+
+            Console.WriteLine($"| {L(rankText, percentileColumnWidth)} | {R(thisValue, thisValueWidth)} | {R(otherValue, otherValueWidth)} | {R(delta, deltaWidth)} |");
+        }
+
+        Console.WriteLine($"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorThis, thisValueWidth)} | {L(separatorOther, otherValueWidth)} | {L(separatorDelta, deltaWidth)} |");
+        Console.WriteLine($"| {L("Mean:", percentileColumnWidth)} | {R(thisMean, thisValueWidth)} | {R(otherMean, otherValueWidth)} | {R(deltaAtMean, deltaWidth)} |");
+        Console.WriteLine($"| {L("StDev:", percentileColumnWidth)} | {R(thisStDev, thisValueWidth)} | {R(otherStDev, otherValueWidth)} | {R(deltaAtStDev, deltaWidth)} |");
+        Console.WriteLine($"| {L("Precision:", percentileColumnWidth)} | {R(thisPrecision, thisValueWidth)} | {R(otherPrecision, otherValueWidth)} | {R(deltaAtPrecision, deltaWidth)} |");
+        Console.WriteLine($"| {L("Total:", percentileColumnWidth)} | {R(thisTotal, thisValueWidth)} | {R(otherTotal, otherValueWidth)} | {R(deltaAtTotal, deltaWidth)} |");
+        Console.WriteLine();
     }
 }

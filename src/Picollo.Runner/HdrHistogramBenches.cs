@@ -7,7 +7,7 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = 24_000;// (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
+    private static readonly long MaxValue = 24_000; // (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 1; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
     private static readonly bool UseDoublePrecision = true; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
@@ -18,14 +18,15 @@ public class HdrHistogramBenches
 
     private static long[] InitValues()
     {
-        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.Midpoint;
+        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.UpperBound;
 
         var count = 1_000_000;
         var values = new long[count];
         Random random = new Random(42);
         for (int i = 0; i < count; i++)
         {
-            values[i] = (long)(20000 + random.NextDouble() * 2000 + random.NextDouble() * 1000 + random.NextDouble() * 5 + random.NextDouble() * 250);// (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
+            values[i] = (long)(20000 + random.NextDouble() * 2000 + random.NextDouble() * 1000 + random.NextDouble() * 5 +
+                               random.NextDouble() * 250); // (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
         }
 
         random.Shuffle(values);
@@ -68,6 +69,19 @@ public class HdrHistogramBenches
         Console.WriteLine(
             $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
         Console.WriteLine();
+        // h.GetSummary().PrettyPrint();
+        // h.GetSummary().PrettyPrint2();
+        var summary = h.GetSummary();
+        summary.PrettyPrint();
+
+        for (int i = 0; i < 100_000_000; i++)
+        {
+            h.Record(22050);
+        }
+        
+        
+        summary.PrettyPrintDiff(h.GetSummary(), "Delta summary", "A", "B");
+        
     }
 
     public static void PicolloConcurrentBench(int runs = 10, int threads = 2, bool threadLocal = false, ulong? maxValue = null)
@@ -264,13 +278,13 @@ public class HdrHistogramBenches
                 // manualCount = 0UL;
                 // foreach (var bucket in h.Buckets)
                 // {
-                //     manualCount += bucket.Count;
+                    // manualCount += bucket.Count;
                 // }
             }
 
             sw.Stop();
 
-            if (summary.TotalCount != h.TotalCount)
+            if (summary.TotalCount != h.TotalCount && manualCount != h.TotalCount)
                 throw new Exception($"manualCount != h.TotalCount");
 
             var totalOps = rounds;
@@ -332,8 +346,6 @@ public class HdrHistogramBenches
 
     public static void DetectStaleMultiplyStore(int seconds = 2)
     {
-        Console.OutputEncoding = System.Text.Encoding.UTF8;
-
         double maxBadSeen = 0;
         double expectedSign = 1;
         int bad = 0;

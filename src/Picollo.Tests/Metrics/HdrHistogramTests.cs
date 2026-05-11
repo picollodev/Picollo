@@ -78,6 +78,49 @@ public class HdrHistogramTests
     [Test]
     public void GetPercentiles()
     {
+        var h = new HdrHistogram<uint>(0.01, 0, ulong.MaxValue);
+        h.Record(1);
+        h.Record(2);
+        h.Record(3);
+        h.Record(4);
+        h.Record(5);
+
+        Span<double> ranks = [0, 40, 80, 100];
+        Span<Percentile> percentiles = stackalloc Percentile[ranks.Length];
+        h.GetPercentiles(ranks, percentiles);
+
+        percentiles[0].Value.ShouldBe(1ul);
+        percentiles[1].Value.ShouldBe(2ul);
+        percentiles[2].Value.ShouldBe(4ul);
+        percentiles[3].Value.ShouldBe(5ul);
+    }
+
+    [Test]
+    public void GetPercentilesRejectsInvalidRanks()
+    {
+        var h = new HdrHistogram<uint>(0.01, 0, ulong.MaxValue);
+        h.Record(1);
+
+        Should.Throw<ArgumentException>(() =>
+        {
+            Span<double> duplicateRanks = [10, 10];
+            Span<Percentile> percentiles = stackalloc Percentile[duplicateRanks.Length];
+            h.GetPercentiles(duplicateRanks, percentiles);
+        });
+
+        Should.Throw<ArgumentException>(() =>
+        {
+            Span<double> outOfRangeRanks = [-1, 10];
+            Span<Percentile> percentiles = stackalloc Percentile[outOfRangeRanks.Length];
+            h.GetPercentiles(outOfRangeRanks, percentiles);
+        });
+
+        Should.Throw<ArgumentException>(() =>
+        {
+            Span<double> nanRanks = [10, double.NaN];
+            Span<Percentile> percentiles = stackalloc Percentile[nanRanks.Length];
+            h.GetPercentiles(nanRanks, percentiles);
+        });
     }
 
     [Test]
