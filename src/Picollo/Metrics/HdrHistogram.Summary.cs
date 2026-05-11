@@ -96,6 +96,7 @@ public class HdrHistogramSummary
         {
             EquivalentValueSelection.UpperBound => $"-{P100.Bucket.Step:N0} ",
             EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0} ",
+            EquivalentValueSelection.Interpolated => $"~ {P100.Bucket.Step / 2:N0} ",
             _                                   => $"± {P100.Bucket.Step / 2:N0} ",
         };
         int wPlusMinus = Math.Max("StDev: ".Length, Math.Max(maxPlusMinus.Length, "Total:".Length));
@@ -121,6 +122,7 @@ public class HdrHistogramSummary
             {
                 EquivalentValueSelection.UpperBound   => $"-{p.Bucket.Step:N0}",
                 EquivalentValueSelection.LowerBound   => $"+{p.Bucket.Step:N0}",
+                EquivalentValueSelection.Interpolated => $"~{p.Bucket.Step / 2:N0}",
                 _                                     => $"±{p.Bucket.Step / 2:N0}",
             };
             string count     = p.Count.ToString("N0");
@@ -156,6 +158,7 @@ public class HdrHistogramSummary
         {
             EquivalentValueSelection.UpperBound => $"-{P100.Bucket.Step:N0} ",
             EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0} ",
+            EquivalentValueSelection.Interpolated => $"~ {P100.Bucket.Step / 2:N0} ",
             _ => $"± {P100.Bucket.Step / 2:N0} ",
         };
         int plusMinusWidth = Math.Max("StDev: ".Length, Math.Max("Total:".Length, maxPlusMinus.Length));
@@ -182,6 +185,7 @@ public class HdrHistogramSummary
             {
                 EquivalentValueSelection.UpperBound => $"-{percentile.Bucket.Step:N0}",
                 EquivalentValueSelection.LowerBound => $"+{percentile.Bucket.Step:N0}",
+                EquivalentValueSelection.Interpolated => $"~{percentile.Bucket.Step / 2:N0}",
                 _ => $"±{percentile.Bucket.Step / 2:N0}",
             };
             string countText = percentile.Count.ToString("N0");
@@ -214,6 +218,7 @@ public class HdrHistogramSummary
         {
             EquivalentValueSelection.UpperBound => $"-{P100.Bucket.Step:N0}",
             EquivalentValueSelection.LowerBound => $"+{P100.Bucket.Step:N0}",
+            EquivalentValueSelection.Interpolated => $"~{P100.Bucket.Step / 2:N0}",
             _ => $"±{P100.Bucket.Step / 2:N0}",
         };
         int plusMinusWidth = Math.Max("StDev:".Length, Math.Max("Total:".Length, maxPlusMinus.Length));
@@ -234,10 +239,10 @@ public class HdrHistogramSummary
             return new string('-', width);
         }
 
-        string separatorPercentile = new string('-', percentileColumnWidth);
-        string separatorValue = new string('-', valueWidth);
-        string separatorPlusMinus = new string('-', plusMinusWidth);
-        string separatorCount = new string('-', countWidth);
+        string separatorPercentile = new(' ', percentileColumnWidth);
+        string separatorValue = new(' ', valueWidth);
+        string separatorPlusMinus = new(' ', plusMinusWidth);
+        string separatorCount = new(' ', countWidth);
 
         Console.WriteLine($"### {title ?? "Histogram summary"}");
         Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R("Value", valueWidth)} | {L("±", plusMinusWidth)} | {R("Count", countWidth)} |");
@@ -251,6 +256,7 @@ public class HdrHistogramSummary
             {
                 EquivalentValueSelection.UpperBound => $"-{percentile.Bucket.Step:N0}",
                 EquivalentValueSelection.LowerBound => $"+{percentile.Bucket.Step:N0}",
+                EquivalentValueSelection.Interpolated => $"~{percentile.Bucket.Step / 2:N0}",
                 _ => $"±{percentile.Bucket.Step / 2:N0}",
             };
             string countText = percentile.Count.ToString("N0");
@@ -277,8 +283,9 @@ public class HdrHistogramSummary
         string otherStDev = other.StDev.ToString("N2");
         string thisTotal = TotalCount.ToString("N0");
         string otherTotal = other.TotalCount.ToString("N0");
+        string dValueRowLabel = "D-value:";
 
-        int percentileColumnWidth = Math.Max("Percentile".Length, "Precision:".Length);
+        int percentileColumnWidth = Math.Max(Math.Max("Percentile".Length, "Precision:".Length), dValueRowLabel.Length);
         int thisValueWidth = Math.Max(thisName.Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(thisMean.Length, Math.Max(thisStDev.Length, Math.Max(thisPrecision.Length, thisTotal.Length)))));
         int otherValueWidth = Math.Max(otherName.Length, Math.Max(other.P100.Value.ToString("N0").Length, Math.Max(otherMean.Length, Math.Max(otherStDev.Length, Math.Max(otherPrecision.Length, otherTotal.Length)))));
 
@@ -299,11 +306,19 @@ public class HdrHistogramSummary
         string deltaAtTotal = TotalCount == 0
             ? (other.TotalCount == 0 ? "+0.0%" : "n/a")
             : $"{((double)other.TotalCount - TotalCount) / TotalCount * 100.0:+0.0;-0.0;0.0}%";
+        double pooledVarianceDenominator = TotalCount + other.TotalCount - 2;
+        double pooledStDev = pooledVarianceDenominator <= 0
+            ? 0
+            : Math.Sqrt(((TotalCount - 1) * StDev * StDev + (other.TotalCount - 1) * other.StDev * other.StDev) / pooledVarianceDenominator);
+        string dValue = pooledStDev == 0
+            ? (Mean == other.Mean ? "0.00" : "n/a")
+            : ((other.Mean - Mean) / pooledStDev).ToString("0.00");
         string maxDeltaValue = deltaAtP100;
         if (deltaAtMean.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtMean;
         if (deltaAtStDev.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtStDev;
         if (deltaAtPrecision.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtPrecision;
         if (deltaAtTotal.Length > maxDeltaValue.Length) maxDeltaValue = deltaAtTotal;
+        if (dValue.Length > maxDeltaValue.Length) maxDeltaValue = dValue;
         int deltaWidth = Math.Max("Δ%".Length, maxDeltaValue.Length);
 
         static string R(string s, int w) => s.PadLeft(w);
@@ -322,10 +337,10 @@ public class HdrHistogramSummary
             return new string('-', width);
         }
 
-        string separatorPercentile = new string('-', percentileColumnWidth);
-        string separatorThis = new string('-', thisValueWidth);
-        string separatorOther = new string('-', otherValueWidth);
-        string separatorDelta = new string('-', deltaWidth);
+        string separatorPercentile = new(' ', percentileColumnWidth);
+        string separatorThis = new(' ', thisValueWidth);
+        string separatorOther = new(' ', otherValueWidth);
+        string separatorDelta = new(' ', deltaWidth);
 
         Console.WriteLine($"### {title ?? "Histogram summary delta"}");
         Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Δ%", deltaWidth)} |");
@@ -351,6 +366,7 @@ public class HdrHistogramSummary
         Console.WriteLine($"| {L("StDev:", percentileColumnWidth)} | {R(thisStDev, thisValueWidth)} | {R(otherStDev, otherValueWidth)} | {R(deltaAtStDev, deltaWidth)} |");
         Console.WriteLine($"| {L("Precision:", percentileColumnWidth)} | {R(thisPrecision, thisValueWidth)} | {R(otherPrecision, otherValueWidth)} | {R(deltaAtPrecision, deltaWidth)} |");
         Console.WriteLine($"| {L("Total:", percentileColumnWidth)} | {R(thisTotal, thisValueWidth)} | {R(otherTotal, otherValueWidth)} | {R(deltaAtTotal, deltaWidth)} |");
+        Console.WriteLine($"| {L(dValueRowLabel, percentileColumnWidth)} | {L(string.Empty, thisValueWidth)} | {L(string.Empty, otherValueWidth)} | {R(dValue, deltaWidth)} |");
         Console.WriteLine();
     }
 }

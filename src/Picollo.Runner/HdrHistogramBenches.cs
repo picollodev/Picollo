@@ -18,7 +18,7 @@ public class HdrHistogramBenches
 
     private static long[] InitValues()
     {
-        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.UpperBound;
+        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.Interpolated;
 
         var count = 1_000_000;
         var values = new long[count];
@@ -80,7 +80,7 @@ public class HdrHistogramBenches
         }
         
         
-        summary.PrettyPrintDiff(h.GetSummary(), "Delta summary", "A", "B");
+        h.GetSummary().PrettyPrintDiff(summary, "Delta summary", "A", "B");
         
     }
 
