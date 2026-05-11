@@ -115,7 +115,7 @@ public readonly struct BucketPercentiles : IEnumerable<Percentile>
                 ? (double)targetCount / _totalCount * 100.0
                 : 0.0;
 
-            _current = new Percentile(rank, bucket, targetCount, _runningCount, _totalCount);
+            _current = new Percentile(rank, bucket, targetCount, _runningCount);
             return true;
         }
 

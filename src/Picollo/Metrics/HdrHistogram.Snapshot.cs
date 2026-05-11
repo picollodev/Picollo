@@ -55,4 +55,6 @@ public class HdrHistogramSnapshot : ReadOnlyHdrHistogram
     {
         throw new NotImplementedException();
     }
+
+    public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null) => Histogram.GetSummary(reuseInstance);
 }

@@ -37,8 +37,23 @@ public class HdrHistogramTests
         h.GetRef((ulong)h.BlockSize * 2 + 1).ShouldBe(24u);
         Unsafe.AreSame(ref h.GetRef((ulong)h.BlockSize * 2), ref h.GetRef((ulong)h.BlockSize * 2 + 1)).ShouldBeTrue();
 
+        h.GetBucket((ulong)h.BlockSize * 2).Start.ShouldBe((ulong)h.BlockSize * 2);
+        h.GetBucket((ulong)h.BlockSize * 2).Step.ShouldBe(2UL);
+
         h.GetRef((ulong)h.BlockSize * 4) += 123;
         h.GetRef((ulong)h.BlockSize * 4 + 1).ShouldBe(123u);
+
+        Bucket bucket4 = h.GetBucket((ulong)h.BlockSize * 4);
+        Console.WriteLine(bucket4.ToString());
+        bucket4.Start.ShouldBe((ulong)h.BlockSize * 4);
+        bucket4.Step.ShouldBe(4UL);
+        bucket4.Count.ShouldBe(123UL);
+        bucket4.MidPoint.ShouldBe((ulong)h.BlockSize * 4 + 2);
+        bucket4.NextBucketStart.ShouldBe((ulong)h.BlockSize * 4 + 4);
+        bucket4.HdrBucket.LogicalIndexInBlock.ShouldBe(0U);
+        bucket4.HdrBucket.BlockSize.ShouldBe(h.BlockSize);
+        bucket4.LogicalIndex.ShouldBe(h.BlockSize * 3);
+        bucket4.StorageIndex.ShouldBe(h.BlockSize * 3);
     }
 
     [Test]
@@ -63,7 +78,6 @@ public class HdrHistogramTests
     [Test]
     public void GetPercentiles()
     {
-
     }
 
     [Test]
@@ -161,5 +175,9 @@ public class HdrHistogramTests
             e.MoveNext();
         });
 
+        h.GetBucket(50).Start.ShouldBe(50ul);
+
+        h.GetBucket(500).IsOverflowBucket.ShouldBeTrue();
+        h.GetBucket(500).IsValid.ShouldBeFalse();
     }
 }

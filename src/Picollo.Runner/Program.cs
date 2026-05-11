@@ -9,20 +9,19 @@ internal class Program
     {
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
 
-        var runs = 100;
-        var threads = 2;
+        var runs = 10;
+        var threads = 4;
 
-        
-        
+
+        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.PicolloBucketEnumerationBench(runs);
         return;
-        
+        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
+
         HdrHistogramBenches.PicolloBench(runs);
         HdrHistogramBenches.PicolloThreadLocalBench(runs);
-        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
-        
-        HdrHistogramBenches.LegacyBench(runs);
+
         HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
 
         return;

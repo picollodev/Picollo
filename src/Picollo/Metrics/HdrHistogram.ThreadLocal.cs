@@ -20,8 +20,7 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
 
     private static readonly ConcurrentDictionary<int, WeakReference<HistogramSlot[]?>> KnownSlotsByThreadId = new();
 
-    [ThreadStatic]
-    private static HistogramSlot[]? ts_slots;
+    [ThreadStatic] private static HistogramSlot[]? ts_slots;
 
     private static readonly List<bool> UsedTlsIndices = new(128);
 
@@ -189,10 +188,7 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
                     children = _children = newChildren;
                 }
 
-                histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue)
-                {
-                    OwnerThreadId = threadId
-                };
+                histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue) {OwnerThreadId = threadId};
 
                 children[idx] = histogram;
                 return histogram;
@@ -484,6 +480,12 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
     {
         Accumulate();
         return _accumulator.GetBucket(value);
+    }
+
+    public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null)
+    {
+        Accumulate();
+        return _accumulator.GetSummary(reuseInstance);
     }
 
     internal override HdrHistogram GetSnapshotInternal()

@@ -95,10 +95,10 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     /// </summary>
     public override Bucket GetBucket(ulong value)
     {
-        var logicalIndex = LogicalBuckets.GetIndex(value);
+        var logicalIndex = HdrBuckets.GetLogicalIndexForValue(value);
         var storageIndex = logicalIndex - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
-            return new Bucket(0, 0, OverflowCount, -1);
+            return new Bucket(OverflowCount, -1, default);
 
         ulong count;
 
@@ -112,7 +112,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                 continue;
             }
 
-            count = TtoUlongVolatile(ref Data.GetAtUnsafe(storageIndex));
+            count = TtoUlong(ref Data.GetAtUnsafe(storageIndex));
 
             if (version == Volatile.Read(ref Version))
                 break;
@@ -120,22 +120,20 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
             spinner.Reset();
         }
 
-        var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
-        return new Bucket(start, step, count, (int)storageIndex);
+        return new Bucket(count, (int)storageIndex, HdrBuckets.GetBucketForIndex(logicalIndex));
     }
 
     internal override Bucket GetBucketAtStorageIndex(nuint storageIndex)
     {
         var count = TtoUlong(Data[storageIndex]);
         var logicalIndex = _firstIndexOffset + storageIndex;
-        var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
-        return new Bucket(start, step, count, (int)storageIndex);
+        return new Bucket(count, (int)storageIndex, HdrBuckets.GetBucketForIndex(logicalIndex));
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal ref TCounter GetRef(ulong value)
     {
-        var storageIndex = LogicalBuckets.GetIndex(value) - _firstIndexOffset;
+        var storageIndex = HdrBuckets.GetLogicalIndexForValue(value) - _firstIndexOffset;
         if (storageIndex >= (nuint)Data.LongCount)
             return ref OverflowSlot;
 
@@ -147,7 +145,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         Span<double> ranks = stackalloc double[1];
         Span<Percentile> percentiles = stackalloc Percentile[1];
         ranks[0] = rank;
-        GetPercentiles(ranks, percentiles, Data);
+        GetPercentiles(ranks, percentiles);
         return percentiles[0].GetValue(valueSelection);
     }
 
@@ -169,7 +167,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         try
         {
             var target = percentiles.Slice(0, sortedRanks.Length);
-            GetPercentiles(sortedRanks, target, Data);
+            GetPercentiles(sortedRanks, target);
 
             for (int i = 0; i < sortedRanks.Length; i++)
                 values[i] = target[i].GetValue(valueSelection);
@@ -181,115 +179,62 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         }
     }
 
-    public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles) =>
-        GetPercentiles(sortedRanks, percentiles, Data);
 
     public override Percentile GetPercentile(double rank)
     {
         Span<double> ranks = stackalloc double[1];
         Span<Percentile> percentiles = stackalloc Percentile[1];
         ranks[0] = rank;
-        GetPercentiles(ranks, percentiles, Data);
+        GetPercentiles(ranks, percentiles);
         return percentiles[0];
     }
 
-    internal void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles, UnsafeSpan<TCounter> data,
-        ulong? existingTotalCount = null)
+    public override void GetPercentiles(ReadOnlySpan<double> sortedRanks, Span<Percentile> percentiles)
     {
-        if (percentiles.Length < sortedRanks.Length)
-            throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
-
-        if (sortedRanks.IsEmpty)
-            return;
-
-        if (!IsSorted(sortedRanks))
-            throw new ArgumentException("The ranks for percentiles must be sorted.");
-
-        var spinner = new SpinWait();
-        while (true)
-        {
-            var version = Volatile.Read(ref Version);
-            if ((version & 1) != 0)
-            {
-                spinner.SpinOnce();
-                continue;
-            }
-
-            ulong totalCount = existingTotalCount ?? GetTotalCount(data);
-            percentiles.Slice(0, sortedRanks.Length).Clear();
-
-            if (totalCount > 0)
-            {
-                ulong runningCountFromTail = 0;
-                int rankIndex = sortedRanks.Length - 1;
-
-                for (nint i = data.LongCount - 1; i >= 0 && rankIndex >= 0; i--)
-                {
-                    ulong count = TtoUlong(ref data.GetAtUnsafe(i));
-
-                    if (count == 0)
-                        continue;
-
-                    runningCountFromTail += count;
-
-                    var storageIndex = (nuint)i;
-                    var logicalIndex = storageIndex + _firstIndexOffset;
-                    var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
-                    var bucket = new Bucket(start, step, count, (int)storageIndex);
-
-                    while (rankIndex >= 0)
-                    {
-                        double rank = sortedRanks[rankIndex];
-                        if (double.IsNaN(rank))
-                            rank = 0.0;
-
-                        rank = Math.Clamp(rank, 0.0, 100.0);
-
-                        ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
-                        targetCount = Math.Clamp(targetCount, 1UL, totalCount);
-
-                        ulong targetCountFromTail = totalCount - targetCount + 1;
-
-                        if (runningCountFromTail < targetCountFromTail)
-                            break;
-
-                        ulong runningCount = totalCount - (runningCountFromTail - count);
-                        percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
-                        rankIndex--;
-                    }
-                }
-            }
-
-            if (version == Volatile.Read(ref Version))
-                break;
-            spinner.Reset();
-        }
+        using var doGetSnapshotInternal = DoGetSnapshotInternal();
+        doGetSnapshotInternal
+            .GetPercentilesAndStats(sortedRanks, percentiles, out _, ref Unsafe.NullRef<double>(), ref Unsafe.NullRef<double>());
     }
 
-    internal void GetPercentilesAndStats(
-        ReadOnlySpan<double> sortedRanks,
+
+    public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null)
+    {
+        var instance = reuseInstance ?? new HdrHistogramSummary();
+        
+        using var doGetSnapshotInternal = DoGetSnapshotInternal();
+        double mean = double.NaN;
+        double stDev = double.NaN;
+        doGetSnapshotInternal
+            .GetPercentilesAndStats(HdrHistogramSummary.SummaryRanks, instance.WriteablePercentiles, out var totalCount, ref mean, ref stDev);
+
+        instance.TotalCount = totalCount;
+        instance.Mean = mean;
+        instance.StDev = stDev;
+
+        return instance;
+    }
+    
+    private void GetPercentilesAndStats(ReadOnlySpan<double> sortedRanks,
         Span<Percentile> percentiles,
-        bool shouldComputeStDev,
-        out double mean,
-        out double stDev)
+        out ulong totalCount,
+        ref double meanRef,
+        ref double stDevRef)
     {
         if (percentiles.Length < sortedRanks.Length)
             throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
 
-        if (sortedRanks.IsEmpty)
-        {
-            mean = double.NaN;
-            stDev = double.NaN;
-            return;
-        }
-
         if (!IsSorted(sortedRanks))
             throw new ArgumentException("The ranks for percentiles must be sorted.");
 
-        percentiles.Slice(0, sortedRanks.Length).Clear();
-
-        ulong totalCount = 0;
+        totalCount = 0;
         double weightedSum = 0;
+        var shouldComputeMean = !Unsafe.IsNullRef(ref meanRef);
+        var shouldComputeStDev = shouldComputeMean && !Unsafe.IsNullRef(ref stDevRef);
+
+        if (shouldComputeMean)
+            meanRef = double.NaN;
+        if (shouldComputeStDev)
+            stDevRef = double.NaN;
 
         for (nint i = 0; i < Data.LongCount; i++)
         {
@@ -300,19 +245,18 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
             totalCount += count;
 
             var logicalIndex = (nuint)i + _firstIndexOffset;
-            var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
-            weightedSum += (start + step / 2.0) * count;
+            weightedSum += (double)HdrBuckets.GetBucketForIndex(logicalIndex).MidPoint * count;
         }
 
         if (totalCount == 0)
         {
-            mean = double.NaN;
-            stDev = double.NaN;
+            percentiles.Slice(0, sortedRanks.Length).Clear();
+
             return;
         }
 
-        mean = weightedSum / totalCount;
-        stDev = double.NaN;
+        if (shouldComputeMean)
+            meanRef = weightedSum / totalCount;
 
         ulong runningCountFromTail = 0;
         int rankIndex = sortedRanks.Length - 1;
@@ -329,12 +273,11 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
 
             var storageIndex = (nuint)i;
             var logicalIndex = storageIndex + _firstIndexOffset;
-            var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
-            var bucket = new Bucket(start, step, count, (int)storageIndex);
+            var bucket = new Bucket(count, (int)storageIndex, HdrBuckets.GetBucketForIndex(logicalIndex));
 
             if (shouldComputeStDev)
             {
-                double deviation = bucket.MidPoint - mean;
+                double deviation = bucket.MidPoint - meanRef;
                 squaredDeviationSum += deviation * deviation * count;
             }
 
@@ -355,19 +298,20 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                     break;
 
                 ulong runningCount = totalCount - (runningCountFromTail - count);
-                percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
+                percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount);
                 rankIndex--;
             }
 
-            if (!shouldComputeStDev && rankIndex < 0)
+            if (rankIndex < 0 && !shouldComputeStDev)
                 return;
+            // Otherwise continue to accumulate squaredDeviationSum for all buckets
         }
 
-        if (shouldComputeStDev)
-        {
-            double variance = squaredDeviationSum / totalCount;
-            stDev = Math.Sqrt(Math.Max(0, variance));
-        }
+        if (!shouldComputeStDev)
+            return;
+
+        double variance = squaredDeviationSum / totalCount;
+        stDevRef = Math.Sqrt(Math.Max(0, variance));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -417,7 +361,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
                 continue;
             }
 
-            TResult? result = reader(this);
+            TResult result = reader(this);
 
             if (version == Volatile.Read(ref Version))
                 return result;
@@ -431,13 +375,13 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         if (OwnerThreadId == int.MinValue)
         {
             Interlocked.Add(ref Version, 2); // Invalidate enumerators
-            
+
             var array = Data.OwnerArray;
             Data = default;
-            
+
             if (array is not null)
                 ArrayPool<TCounter>.Shared.Return(array, true);
-            
+
             // A public instance will never hit the path as it's not possible to set OwnerThreadId sentinel publicly
             Interlocked.CompareExchange(ref s_pool, this, null);
         }
@@ -451,7 +395,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     private HdrHistogram<TCounter, TAddition> DoGetSnapshotInternal()
     {
         var instance = Interlocked.Exchange(ref s_pool, null) ?? new HdrHistogram<TCounter, TAddition>();
-        instance.LogicalBuckets = LogicalBuckets;
+        instance.HdrBuckets = HdrBuckets;
         instance._firstIndexOffset = _firstIndexOffset;
         Interlocked.Add(ref instance.Version, 2);
         instance.MinTrackableValue = MinTrackableValue;

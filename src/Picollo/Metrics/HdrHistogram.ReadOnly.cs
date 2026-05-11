@@ -68,4 +68,6 @@ public abstract class ReadOnlyHdrHistogram
     /// Returns <see cref="Bucket"/> details for the given value.
     /// </summary>
     public abstract Bucket GetBucket(ulong value);
+
+    public abstract HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null);
 }

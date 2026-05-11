@@ -7,10 +7,10 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
-    private static readonly int RandomPower = 4; // Skews values down
+    private static readonly long MaxValue = 24_000;// (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
+    private static readonly int RandomPower = 1; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
-    private static readonly bool UseDoublePrecision = false; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
+    private static readonly bool UseDoublePrecision = true; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
 
     private static readonly int Rounds = 100;
 
@@ -18,14 +18,14 @@ public class HdrHistogramBenches
 
     private static long[] InitValues()
     {
-        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.UpperBound;
+        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.Midpoint;
 
         var count = 1_000_000;
         var values = new long[count];
         Random random = new Random(42);
         for (int i = 0; i < count; i++)
         {
-            values[i] = (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
+            values[i] = (long)(20000 + random.NextDouble() * 2000 + random.NextDouble() * 1000 + random.NextDouble() * 5 + random.NextDouble() * 250);// (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
         }
 
         random.Shuffle(values);
@@ -110,6 +110,15 @@ public class HdrHistogramBenches
         Thread.Sleep(1000);
         mre.Set();
         Task.WaitAll(tasks);
+
+        Thread.Sleep(100);
+        GC.Collect(2, GCCollectionMode.Forced, true, true);
+        GC.WaitForPendingFinalizers();
+
+        Console.WriteLine((h as ThreadLocalHdrHistogram<uint>)?.TotalCount);
+
+        Console.WriteLine($"Children count: {(h as ThreadLocalHdrHistogram<uint>)?.GetChildrenCount()}");
+
         Console.WriteLine();
     }
 
@@ -187,6 +196,8 @@ public class HdrHistogramBenches
 
         Console.WriteLine(
             $"Percentiles: P1 {h.GetValueAtPercentile(1):N0}, P50 {h.GetValueAtPercentile(50):N0}, P90 {h.GetValueAtPercentile(90):N0}, P99 {h.GetValueAtPercentile(99):N0}, P99.9 {h.GetValueAtPercentile(99.9):N0}");
+
+        h.OutputPercentileDistribution(Console.Out);
         Console.WriteLine();
     }
 
@@ -234,6 +245,8 @@ public class HdrHistogramBenches
 
         PicolloWorkload(h, 1);
 
+        h.GetSummary().PrettyPrint();
+
         var sw = Stopwatch.StartNew();
 
         for (int x = 0; x < runs; x++)
@@ -242,24 +255,23 @@ public class HdrHistogramBenches
 
             ulong manualCount = 0;
             double acc = 0;
-
+            var summary = new HdrHistogramSummary();
             int rounds = Rounds * 100;
-            
+
             for (int r = 0; r < rounds; r++)
             {
-                acc = h.StDev();
-                
+                h.GetSummary(summary);
                 // manualCount = 0UL;
-                // foreach (var bucket in h.BucketPercentiles)
+                // foreach (var bucket in h.Buckets)
                 // {
-                //     manualCount += bucket.Bucket.Count;
+                //     manualCount += bucket.Count;
                 // }
             }
 
             sw.Stop();
 
-            // if (manualCount != h.TotalCount)
-            //     throw new Exception($"manualCount != h.TotalCount");
+            if (summary.TotalCount != h.TotalCount)
+                throw new Exception($"manualCount != h.TotalCount");
 
             var totalOps = rounds;
             var elapsed = sw.Elapsed;

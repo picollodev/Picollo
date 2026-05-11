@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using System.Diagnostics;
 
 namespace Picollo.Metrics;
@@ -12,7 +13,7 @@ public enum EquivalentValueSelection
 }
 
 [DebuggerDisplay("{ToString(),nq}")]
-public readonly record struct Percentile(double Rank, Bucket Bucket, ulong TargetCount, ulong RunningCount, ulong TotalCount)
+public readonly record struct Percentile(double Rank, Bucket Bucket, ulong TargetCount, ulong RunningCount)
 {
     private const EquivalentValueSelection DefaultSelection = EquivalentValueSelection.Midpoint;
 
@@ -34,6 +35,8 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
 
     public ulong Value => GetValue(DefaultEquivalentValueSelection);
 
+    public ulong Count => GetCount(DefaultEquivalentValueSelection);
+
     public ulong GetValue(EquivalentValueSelection calculation)
     {
         if (calculation == default)
@@ -50,7 +53,7 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
                 case EquivalentValueSelection.Midpoint:
                     // not (step - 1 )/2 because each integer value usually virtually represents a rounded real value, e.g. 1us is 1000us.
                     // With odd steps, the value as integer is the beginning of the virtual subrange and the surrounding mass is equal.
-                    offset = step / 2;   
+                    offset = step / 2;
                     break;
                 case EquivalentValueSelection.LowerBound:
                     offset = 0;
@@ -73,6 +76,34 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
 
         return start;
     }
-    
+
     public override string ToString() => $"P{Rank:0.######}={Value:N0}";
+
+    /// <summary>
+    /// Returns a representative count within this bucket's count range
+    /// <c>[RunningCountBefore+1, RunningCount]</c> using the same selection rules as
+    /// <see cref="GetValue"/>. Useful when you want a count that is consistent with
+    /// a chosen <see cref="EquivalentValueSelection"/> rather than the raw
+    /// <see cref="TargetCount"/>.
+    /// </summary>
+    public ulong GetCount(EquivalentValueSelection calculation)
+    {
+        if (calculation == default)
+            calculation = DefaultEquivalentValueSelection;
+
+        var bucketCount = Bucket.Count;
+        var before = RunningCountBefore;
+
+        if (bucketCount <= 1)
+            return before + bucketCount; // single-entry bucket — nothing to choose
+
+        return calculation switch
+        {
+            EquivalentValueSelection.LowerBound => before + 1,
+            EquivalentValueSelection.UpperBound => before + bucketCount, // == RunningCount
+            EquivalentValueSelection.Midpoint => before + bucketCount / 2,
+            EquivalentValueSelection.Interpolated => TargetCount, // already the interpolated position
+            _ => throw new ArgumentOutOfRangeException(nameof(calculation), calculation, null)
+        };
+    }
 }
