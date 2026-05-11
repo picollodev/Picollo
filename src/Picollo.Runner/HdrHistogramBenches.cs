@@ -241,26 +241,30 @@ public class HdrHistogramBenches
             sw.Restart();
 
             ulong manualCount = 0;
+            double acc = 0;
 
             int rounds = Rounds * 100;
+            
             for (int r = 0; r < rounds; r++)
             {
-                manualCount = 0UL;
-                foreach (var bucket in h.BucketPercentiles)
-                {
-                    manualCount += bucket.Bucket.Count;
-                }
+                acc = h.StDev();
+                
+                // manualCount = 0UL;
+                // foreach (var bucket in h.BucketPercentiles)
+                // {
+                //     manualCount += bucket.Bucket.Count;
+                // }
             }
 
             sw.Stop();
 
-            if (manualCount != h.TotalCount)
-                throw new Exception($"manualCount != h.TotalCount");
+            // if (manualCount != h.TotalCount)
+            //     throw new Exception($"manualCount != h.TotalCount");
 
             var totalOps = rounds;
             var elapsed = sw.Elapsed;
             var perOp = elapsed.TotalMicroseconds / totalOps;
-            Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} us");
+            Console.WriteLine($"Elapsed: {elapsed}, perOp: {perOp:N2} us, StDev: {acc:N0}");
         }
 
         Console.WriteLine();

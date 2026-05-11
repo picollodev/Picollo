@@ -1,4 +1,6 @@
-﻿namespace Picollo.Metrics;
+﻿using System;
+
+namespace Picollo.Metrics;
 
 public static partial class HdrHistogramExtensions
 {
@@ -23,5 +25,58 @@ public static partial class HdrHistogramExtensions
         /// Returns an enumerable over non-empty bucket percentiles in the <paramref name="histogram"/>.
         /// </summary>
         public BucketPercentiles BucketPercentilesWithValues => new(histogram, true);
+
+        /// <summary>
+        /// Returns the mean of tracked values using bucket midpoints.
+        /// </summary>
+        public double Mean()
+        {
+            double weightedSum = 0;
+            double totalCount = 0;
+
+            foreach (var bucket in histogram.BucketsWithValues)
+            {
+                double count = bucket.Count;
+                weightedSum += bucket.MidPoint * count;
+                totalCount += count;
+            }
+
+            return totalCount > 0
+                ? weightedSum / totalCount
+                : double.NaN;
+        }
+
+        /// <summary>
+        /// Returns the standard deviation of tracked values using bucket midpoints.
+        /// </summary>
+        public double StDev()
+        {
+            using var buckets = histogram.BucketsWithValues.GetEnumerator();
+            double weightedSum = 0;
+            double totalCount = 0;
+
+            while (buckets.MoveNext())
+            {
+                double count = buckets.Current.Count;
+                weightedSum += buckets.Current.MidPoint * count;
+                totalCount += count;
+            }
+
+            if (totalCount == 0)
+                return double.NaN;
+
+            double mean = weightedSum / totalCount;
+            double squaredDeviationSum = 0;
+
+            buckets.Reset();
+            while (buckets.MoveNext())
+            {
+                double deviation = buckets.Current.MidPoint - mean;
+                squaredDeviationSum += deviation * deviation * buckets.Current.Count;
+            }
+
+            double variance = squaredDeviationSum / totalCount;
+            return Math.Sqrt(Math.Max(0, variance));
+        }
     }
 }

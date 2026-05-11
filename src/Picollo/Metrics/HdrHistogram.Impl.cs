@@ -266,6 +266,110 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         }
     }
 
+    internal void GetPercentilesAndStats(
+        ReadOnlySpan<double> sortedRanks,
+        Span<Percentile> percentiles,
+        bool shouldComputeStDev,
+        out double mean,
+        out double stDev)
+    {
+        if (percentiles.Length < sortedRanks.Length)
+            throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
+
+        if (sortedRanks.IsEmpty)
+        {
+            mean = double.NaN;
+            stDev = double.NaN;
+            return;
+        }
+
+        if (!IsSorted(sortedRanks))
+            throw new ArgumentException("The ranks for percentiles must be sorted.");
+
+        percentiles.Slice(0, sortedRanks.Length).Clear();
+
+        ulong totalCount = 0;
+        double weightedSum = 0;
+
+        for (nint i = 0; i < Data.LongCount; i++)
+        {
+            ulong count = TtoUlong(ref Data.GetAtUnsafe(i));
+            if (count == 0)
+                continue;
+
+            totalCount += count;
+
+            var logicalIndex = (nuint)i + _firstIndexOffset;
+            var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
+            weightedSum += (start + step / 2.0) * count;
+        }
+
+        if (totalCount == 0)
+        {
+            mean = double.NaN;
+            stDev = double.NaN;
+            return;
+        }
+
+        mean = weightedSum / totalCount;
+        stDev = double.NaN;
+
+        ulong runningCountFromTail = 0;
+        int rankIndex = sortedRanks.Length - 1;
+        double squaredDeviationSum = 0;
+
+        for (nint i = Data.LongCount - 1; i >= 0; i--)
+        {
+            ulong count = TtoUlong(ref Data.GetAtUnsafe(i));
+
+            if (count == 0)
+                continue;
+
+            runningCountFromTail += count;
+
+            var storageIndex = (nuint)i;
+            var logicalIndex = storageIndex + _firstIndexOffset;
+            var (start, step) = LogicalBuckets.GetBucketRange(logicalIndex);
+            var bucket = new Bucket(start, step, count, (int)storageIndex);
+
+            if (shouldComputeStDev)
+            {
+                double deviation = bucket.MidPoint - mean;
+                squaredDeviationSum += deviation * deviation * count;
+            }
+
+            while (rankIndex >= 0)
+            {
+                double rank = sortedRanks[rankIndex];
+                if (double.IsNaN(rank))
+                    rank = 0.0;
+
+                rank = Math.Clamp(rank, 0.0, 100.0);
+
+                ulong targetCount = (ulong)Math.Ceiling(rank / 100.0 * totalCount);
+                targetCount = Math.Clamp(targetCount, 1UL, totalCount);
+
+                ulong targetCountFromTail = totalCount - targetCount + 1;
+
+                if (runningCountFromTail < targetCountFromTail)
+                    break;
+
+                ulong runningCount = totalCount - (runningCountFromTail - count);
+                percentiles[rankIndex] = new Percentile(rank, bucket, targetCount, runningCount, totalCount);
+                rankIndex--;
+            }
+
+            if (!shouldComputeStDev && rankIndex < 0)
+                return;
+        }
+
+        if (shouldComputeStDev)
+        {
+            double variance = squaredDeviationSum / totalCount;
+            stDev = Math.Sqrt(Math.Max(0, variance));
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ulong GetTotalCount(UnsafeSpan<TCounter> data)
     {
@@ -332,7 +436,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
             Data = default;
             
             if (array is not null)
-                ArrayPool<TCounter>.Shared.Return(array, false);
+                ArrayPool<TCounter>.Shared.Return(array, true);
             
             // A public instance will never hit the path as it's not possible to set OwnerThreadId sentinel publicly
             Interlocked.CompareExchange(ref s_pool, this, null);
