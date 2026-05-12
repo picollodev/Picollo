@@ -200,14 +200,18 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null)
     {
         var instance = reuseInstance ?? new HdrHistogramSummary();
-        
-        using var doGetSnapshotInternal = DoGetSnapshotInternal();
+
+        using var snapshot = DoGetSnapshotInternal();
         double mean = double.NaN;
         double stDev = double.NaN;
-        doGetSnapshotInternal
-            .GetPercentilesAndStats(HdrHistogramSummary.SummaryRanks, instance.WriteablePercentiles, out var totalCount, ref mean, ref stDev);
+        snapshot.GetPercentilesAndStats(HdrHistogramSummary.SummaryRanks, instance.WriteablePercentiles, out var totalCount, ref mean,
+            ref stDev);
+
+        instance.MinTrackableValue = snapshot.MinTrackableValue;
+        instance.MaxTrackableValue = snapshot.MaxTrackableValue;
 
         instance.TotalCount = totalCount;
+        instance.OverflowCount = TtoUlong(ref snapshot.OverflowSlot);
         instance.Mean = mean;
         instance.StDev = stDev;
 
@@ -215,7 +219,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     }
 
     public override HdrHistogramSnapshot GetSnapshot() => new(this, GetSnapshotInternal());
-    
+
     private void GetPercentilesAndStats(ReadOnlySpan<double> sortedRanks,
         Span<Percentile> percentiles,
         out ulong totalCount,
@@ -226,7 +230,8 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
             throw new ArgumentException("Target buffer must be at least as long as the percentile rank buffer.", nameof(percentiles));
 
         if (!IsValid(sortedRanks))
-            throw new ArgumentException("The ranks for percentiles must be strictly increasing and each value must be in the [0, 100] range.", nameof(sortedRanks));
+            throw new ArgumentException(
+                "The ranks for percentiles must be strictly increasing and each value must be in the [0, 100] range.", nameof(sortedRanks));
 
         totalCount = 0;
         double weightedSum = 0;

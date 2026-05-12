@@ -2,6 +2,7 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using NUnit.Framework;
 using Picollo.Metrics;
 using Shouldly;
@@ -50,7 +51,7 @@ public class HdrHistogramTests
         bucket4.Count.ShouldBe(123UL);
         bucket4.MidPoint.ShouldBe((ulong)h.BlockSize * 4 + 2);
         bucket4.NextBucketStart.ShouldBe((ulong)h.BlockSize * 4 + 4);
-        bucket4.HdrBucket.LogicalIndexInBlock.ShouldBe(0U);
+        bucket4.HdrBucket.IndexInBlock.ShouldBe(0U);
         bucket4.HdrBucket.BlockSize.ShouldBe(h.BlockSize);
         bucket4.LogicalIndex.ShouldBe(h.BlockSize * 3);
         bucket4.StorageIndex.ShouldBe(h.BlockSize * 3);
@@ -222,5 +223,29 @@ public class HdrHistogramTests
 
         h.GetBucket(500).IsOverflowBucket.ShouldBeTrue();
         h.GetBucket(500).IsValid.ShouldBeFalse();
+    }
+
+    [Test]
+    public void SummarySerializationRoundtrip()
+    {
+        var h = new HdrHistogram<ulong>(relativeError: 0.001, minTrackableValue: 200, maxTrackableValue: 100000);
+
+        for (ulong v = 0; v <= 2000; v++)
+            h.Record(v * 100);
+
+        var summary = h.GetSummary();
+
+        var opt = new JsonSerializerOptions {WriteIndented = true};
+
+        string json = JsonSerializer.Serialize(summary, opt);
+        Console.WriteLine(json);
+        var summary2 = JsonSerializer.Deserialize<HdrHistogramSummary>(json);
+
+        summary2.ShouldNotBeNull();
+        summary2.ShouldBe(summary);
+
+        summary.Percentiles.ToArray().Select(x => x.Value)
+            .SequenceEqual(summary2.Percentiles.ToArray().Select(x => x.Value))
+            .ShouldBeTrue();
     }
 }

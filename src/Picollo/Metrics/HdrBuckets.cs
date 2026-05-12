@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 
@@ -41,7 +42,7 @@ internal readonly struct HdrBuckets
     {
         int blockIndex = 64 - BitOperations.LeadingZeroCount(value >> BlockScale);
         int stepScale = blockIndex - (blockIndex != 0 ? 1 : 0);
-        ulong bucketIndexInBlock = (value >> stepScale) & ((1u << BlockScale) - 1);
+        uint bucketIndexInBlock = (uint)(value >> stepScale) & ((1u << BlockScale) - 1);
         return new HdrBucket(blockIndex, BlockScale, bucketIndexInBlock);
     }
 
@@ -49,12 +50,12 @@ internal readonly struct HdrBuckets
     public HdrBucket GetBucketForIndex(nuint logicalIndex)
     {
         var blockIndex = (int)(logicalIndex >> BlockScale);
-        var bucketIndexInBlock = (ulong)(logicalIndex & (nuint)((1u << BlockScale) - 1));
+        uint bucketIndexInBlock = (uint)(logicalIndex) & ((1u << BlockScale) - 1);
 
         return new HdrBucket(blockIndex, BlockScale, bucketIndexInBlock);
     }
 
-    internal readonly struct HdrBucket
+    internal readonly struct HdrBucket : IEquatable<HdrBucket>
     {
         private const int BucketIndexInBlockBits = 20;
         private const int BlockScaleBits = 6;
@@ -74,17 +75,17 @@ internal readonly struct HdrBuckets
             _value = value;
         }
 
-        public HdrBucket(int blockIndex, int blockScale, ulong bucketIndexInBlock)
+        public HdrBucket(int blockIndex, int blockScale, uint indexInBlock)
         {
             Debug.Assert((uint)blockIndex <= BlockIndexMask);
             Debug.Assert(blockScale >= 2 && (uint)blockScale <= BlockScaleMask);
-            Debug.Assert(bucketIndexInBlock <= BucketIndexInBlockMask);
+            Debug.Assert(indexInBlock <= BucketIndexInBlockMask);
             Debug.Assert(blockScale <= BucketIndexInBlockBits);
 
             _value =
                 ((uint)blockIndex << BlockIndexShift) |
                 ((uint)blockScale << BlockScaleShift) |
-                (uint)bucketIndexInBlock;
+                (uint)indexInBlock;
         }
 
         public uint PackedValue => _value;
@@ -94,7 +95,7 @@ internal readonly struct HdrBuckets
 
         public int BlockScale => (int)((_value >> BlockScaleShift) & BlockScaleMask);
 
-        public uint LogicalIndexInBlock => _value & BucketIndexInBlockMask;
+        public uint IndexInBlock => _value & BucketIndexInBlockMask;
 
         public int StepScale => BlockIndex - (BlockIndex != 0 ? 1 : 0);
 
@@ -104,13 +105,19 @@ internal readonly struct HdrBuckets
         {
             get
             {
-                ulong mantissa = (BlockIndex != 0 ? 1UL << BlockScale : 0UL) + LogicalIndexInBlock;
+                ulong mantissa = (BlockIndex != 0 ? 1UL << BlockScale : 0UL) + IndexInBlock;
                 return mantissa << StepScale;
             }
         }
 
         public ulong MidPoint => Start + Step / 2;
 
-        public nuint LogicalIndex => ((nuint)(uint)BlockIndex << BlockScale) + LogicalIndexInBlock;
+        public nuint LogicalIndex => ((nuint)(uint)BlockIndex << BlockScale) + IndexInBlock;
+
+        public bool Equals(HdrBucket other) => _value == other._value;
+
+        public override bool Equals(object? obj) => obj is HdrBucket other && Equals(other);
+
+        public override int GetHashCode() => (int)_value;
     }
 }

@@ -1,6 +1,7 @@
 using System;
-using System.Collections.Immutable;
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Picollo.Metrics;
 
@@ -13,9 +14,10 @@ public enum EquivalentValueSelection
 }
 
 [DebuggerDisplay("{ToString(),nq}")]
+[JsonConverter(typeof(PercentileJsonConverter))]
 public readonly record struct Percentile(double Rank, Bucket Bucket, ulong TargetCount, ulong RunningCount)
 {
-    private const EquivalentValueSelection DefaultSelection = EquivalentValueSelection.Midpoint;
+    private const EquivalentValueSelection DefaultSelection = EquivalentValueSelection.LowerBound;
 
     /// <summary>
     /// Sets the default <see cref="EquivalentValueSelection"/> used for <see cref="Value"/>.
@@ -34,8 +36,6 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
     public ulong RunningCountBefore => RunningCount - Bucket.Count;
 
     public ulong Value => GetValue(DefaultEquivalentValueSelection);
-
-    public ulong Count => GetCount(DefaultEquivalentValueSelection);
 
     public ulong GetValue(EquivalentValueSelection calculation)
     {
@@ -77,33 +77,51 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
         return start;
     }
 
-    public override string ToString() => $"P{Rank:0.######}={Value:N0}";
+    public override string ToString() => $"P{Rank:0.######}={Value:N0} {Bucket}";
 
-    /// <summary>
-    /// Returns a representative count within this bucket's count range
-    /// <c>[RunningCountBefore+1, RunningCount]</c> using the same selection rules as
-    /// <see cref="GetValue"/>. Useful when you want a count that is consistent with
-    /// a chosen <see cref="EquivalentValueSelection"/> rather than the raw
-    /// <see cref="TargetCount"/>.
-    /// </summary>
-    public ulong GetCount(EquivalentValueSelection calculation)
+    public sealed class PercentileJsonConverter : JsonConverter<Percentile>
     {
-        if (calculation == default)
-            calculation = DefaultEquivalentValueSelection;
+        private const string PropRank = "rank";
+        private const string PropBucket = "bucket";
+        private const string PropTargetCount = "targetCount";
+        private const string PropRunningCount = "runningCount";
 
-        var bucketCount = Bucket.Count;
-        var before = RunningCountBefore;
-
-        if (bucketCount <= 1)
-            return before + bucketCount; // single-entry bucket — nothing to choose
-
-        return calculation switch
+        public override Percentile Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            EquivalentValueSelection.LowerBound => before + 1,
-            EquivalentValueSelection.UpperBound => before + bucketCount, // == RunningCount
-            EquivalentValueSelection.Midpoint => before + bucketCount / 2,
-            EquivalentValueSelection.Interpolated => TargetCount, // already the interpolated position
-            _ => throw new ArgumentOutOfRangeException(nameof(calculation), calculation, null)
-        };
+            double rank = 0;
+            Bucket bucket = default;
+            ulong targetCount = 0;
+            ulong runningCount = 0;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject) break;
+                if (reader.TokenType != JsonTokenType.PropertyName) continue;
+
+                string propName = reader.GetString()!;
+                reader.Read();
+
+                switch (propName)
+                {
+                    case PropRank: rank = reader.GetDouble(); break;
+                    case PropBucket: bucket = JsonSerializer.Deserialize<Bucket>(ref reader, options); break;
+                    case PropTargetCount: targetCount = reader.GetUInt64(); break;
+                    case PropRunningCount: runningCount = reader.GetUInt64(); break;
+                }
+            }
+
+            return new Percentile(rank, bucket, targetCount, runningCount);
+        }
+
+        public override void Write(Utf8JsonWriter writer, Percentile value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber(PropRank, value.Rank);
+            writer.WritePropertyName(PropBucket);
+            JsonSerializer.Serialize(writer, value.Bucket, options);
+            writer.WriteNumber(PropTargetCount, value.TargetCount);
+            writer.WriteNumber(PropRunningCount, value.RunningCount);
+            writer.WriteEndObject();
+        }
     }
 }

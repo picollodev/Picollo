@@ -1,19 +1,26 @@
 ﻿using System;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Picollo.Metrics;
 
-public class HdrHistogramSummary
+[JsonConverter(typeof(HdrHistogramSummaryJsonConverter))]
+public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
 {
-    internal static ReadOnlySpan<double> SummaryRanks => [0, 1, 5, 10, 25, 50, 75, 90, 92.5, 95, 97.5, 99, 99.9, 99.99, 99.999, 100];
+    public static ReadOnlySpan<double> SummaryRanks => [0, 1, 5, 10, 25, 50, 75, 90, 92.5, 95, 97.5, 99, 99.9, 99.99, 99.999, 100];
+
+    public ulong MinTrackableValue { get; internal set; }
+    public ulong MaxTrackableValue { get; internal set; }
 
     public ulong TotalCount { get; internal set; }
+    public ulong OverflowCount { get; internal set; }
     public double Mean { get; internal set; }
     public double StDev { get; internal set; }
+    private readonly Percentile[] _percentiles = new Percentile[16];
 
-    internal Span<Percentile> WriteablePercentiles => MemoryMarshal.CreateSpan(ref _percentiles[0], 16);
-    public ReadOnlySpan<Percentile> PercentilesReadOnly => MemoryMarshal.CreateReadOnlySpan(ref _percentiles[0], 16);
+    public ReadOnlySpan<Percentile> Percentiles => _percentiles;
+
+    internal Span<Percentile> WriteablePercentiles => _percentiles;
 
     /// <summary>0% percentile — the minimum observed value.</summary>
     public ref readonly Percentile P0 => ref _percentiles[0];
@@ -63,17 +70,6 @@ public class HdrHistogramSummary
     /// <summary>100% percentile — the maximum observed value.</summary>
     public ref readonly Percentile P100 => ref _percentiles[15];
 
-    // Using InlineArray here is only "just because I can", it's not really justified, should not be used in normal code.
-    // It does save one alloc vs Percentile[], safe an object header of 16 bytes, reduces indirection, but here it does not matter.
-    // Use inline arrays only when the path is so hot that the overhead of dereferencing an array item matters.
-    private PercentileInlineArray _percentiles;
-
-    [InlineArray(16)]
-    private struct PercentileInlineArray
-    {
-        private Percentile _element0;
-    }
-
     public void PrettyPrint(string? title = null)
     {
         var relativePrecisionPct = 100 * 0.5 / P0.Bucket.HdrBucket.BlockSize;
@@ -82,10 +78,13 @@ public class HdrHistogramSummary
         string meanValue = Mean.ToString("N2");
         string stDevValue = StDev.ToString("N2");
         string totalCountValue = TotalCount.ToString("N0");
+        string overflowCountValue = OverflowCount.ToString("N0");
         string precisionValue = $"{relativePrecisionPct:0.0###}%";
+        string maxTrackable = MaxTrackableValue == ulong.MaxValue ? "" : $"{MaxTrackableValue:N0}";
 
-        int percentileColumnWidth = Math.Max("Percentile".Length, "Precision:".Length);
-        int valueWidth = Math.Max("Value".Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(meanValue.Length, precisionValue.Length)));
+        int percentileColumnWidth = Math.Max(Math.Max("Percentile".Length, "Precision:".Length), "Overflow".Length);
+        int valueWidth = Math.Max("Value".Length,
+            Math.Max(P100.Value.ToString("N0").Length, Math.Max(meanValue.Length, precisionValue.Length)));
 
         string maxPlusMinus = selection switch
         {
@@ -94,10 +93,16 @@ public class HdrHistogramSummary
             EquivalentValueSelection.Interpolated => $"~{P100.Bucket.Step / 2:N0}",
             _ => $"±{P100.Bucket.Step / 2:N0}",
         };
+
         int plusMinusWidth = Math.Max("StDev:".Length, Math.Max("Total:".Length, maxPlusMinus.Length));
-        int countWidth = Math.Max("Count".Length, Math.Max(stDevValue.Length, totalCountValue.Length));
+
+        int countWidth =
+            Math.Max(Math.Max("Count".Length, Math.Max(Math.Max(stDevValue.Length, totalCountValue.Length), overflowCountValue.Length)),
+                maxTrackable.Length);
+
         static string R(string s, int w) => s.PadLeft(w);
         static string L(string s, int w) => s.PadRight(w);
+
         static string MarkdownSeparatorCell(int width, bool leftAligned, bool rightAligned)
         {
             width = Math.Max(width, 3);
@@ -118,10 +123,12 @@ public class HdrHistogramSummary
         string separatorCount = new(' ', countWidth);
 
         Console.WriteLine($"### {title ?? "Histogram summary"}");
-        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R("Value", valueWidth)} | {L("±", plusMinusWidth)} | {R("Count", countWidth)} |");
-        Console.WriteLine($"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(valueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(plusMinusWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(countWidth, leftAligned: false, rightAligned: true)} |");
+        Console.WriteLine(
+            $"| {L("Percentile", percentileColumnWidth)} | {R("Value", valueWidth)} | {L("±", plusMinusWidth)} | {R("Count", countWidth)} |");
+        Console.WriteLine(
+            $"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(valueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(plusMinusWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(countWidth, leftAligned: false, rightAligned: true)} |");
 
-        foreach (ref readonly var percentile in PercentilesReadOnly)
+        foreach (ref readonly var percentile in Percentiles)
         {
             string rankText = percentile.Rank.ToString("0.######");
             string valueText = percentile.Value.ToString("N0");
@@ -132,14 +139,26 @@ public class HdrHistogramSummary
                 EquivalentValueSelection.Interpolated => $"~{percentile.Bucket.Step / 2:N0}",
                 _ => $"±{percentile.Bucket.Step / 2:N0}",
             };
-            string countText = percentile.Count.ToString("N0");
+            string countText = percentile.TargetCount.ToString("N0");
 
-            Console.WriteLine($"| {L(rankText, percentileColumnWidth)} | {R(valueText, valueWidth)} | {L(plusMinusText, plusMinusWidth)} | {R(countText, countWidth)} |");
+            Console.WriteLine(
+                $"| {L(rankText, percentileColumnWidth)} | {R(valueText, valueWidth)} | {L(plusMinusText, plusMinusWidth)} | {R(countText, countWidth)} |");
         }
 
-        Console.WriteLine($"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorValue, valueWidth)} | {L(separatorPlusMinus, plusMinusWidth)} | {L(separatorCount, countWidth)} |");
-        Console.WriteLine($"| {L("Mean:", percentileColumnWidth)} | {R(meanValue, valueWidth)} | {L("StDev:", plusMinusWidth)} | {R(stDevValue, countWidth)} |");
-        Console.WriteLine($"| {L("Precision:", percentileColumnWidth)} | {R(precisionValue, valueWidth)} | {L("Total:", plusMinusWidth)} | {R(totalCountValue, countWidth)} |");
+        if (OverflowCount > 0)
+            Console.WriteLine(
+                $"| {L("Overflow", percentileColumnWidth)} | {L(separatorValue, valueWidth)} | {L(separatorPlusMinus, plusMinusWidth)} | {R(overflowCountValue, countWidth)} |");
+
+        Console.WriteLine(
+            $"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorValue, valueWidth)} | {L(separatorPlusMinus, plusMinusWidth)} | {L(separatorCount, countWidth)} |");
+        Console.WriteLine(
+            $"| {L("Mean:", percentileColumnWidth)} | {R(meanValue, valueWidth)} | {L("StDev:", plusMinusWidth)} | {R(stDevValue, countWidth)} |");
+        Console.WriteLine(
+            $"| {L("Precision:", percentileColumnWidth)} | {R(precisionValue, valueWidth)} | {L("Total:", plusMinusWidth)} | {R(totalCountValue, countWidth)} |");
+
+        if (MinTrackableValue != 0 || MaxTrackableValue != ulong.MaxValue)
+            Console.WriteLine(
+                $"| {L("Tr.Range:", percentileColumnWidth)} | {R($"{MinTrackableValue:N0}", valueWidth)} | {L("to", plusMinusWidth)} | {R(maxTrackable, countWidth)} |");
         Console.WriteLine();
     }
 
@@ -159,8 +178,12 @@ public class HdrHistogramSummary
         string dValueRowLabel = "D-value:";
 
         int percentileColumnWidth = Math.Max(Math.Max("Percentile".Length, "Precision:".Length), dValueRowLabel.Length);
-        int thisValueWidth = Math.Max(thisName.Length, Math.Max(P100.Value.ToString("N0").Length, Math.Max(thisMean.Length, Math.Max(thisStDev.Length, Math.Max(thisPrecision.Length, thisTotal.Length)))));
-        int otherValueWidth = Math.Max(otherName.Length, Math.Max(other.P100.Value.ToString("N0").Length, Math.Max(otherMean.Length, Math.Max(otherStDev.Length, Math.Max(otherPrecision.Length, otherTotal.Length)))));
+        int thisValueWidth = Math.Max(thisName.Length,
+            Math.Max(P100.Value.ToString("N0").Length,
+                Math.Max(thisMean.Length, Math.Max(thisStDev.Length, Math.Max(thisPrecision.Length, thisTotal.Length)))));
+        int otherValueWidth = Math.Max(otherName.Length,
+            Math.Max(other.P100.Value.ToString("N0").Length,
+                Math.Max(otherMean.Length, Math.Max(otherStDev.Length, Math.Max(otherPrecision.Length, otherTotal.Length)))));
 
         string deltaAtP100 = P100.Value == 0
             ? (other.P100.Value == 0 ? "+0.0%" : "n/a")
@@ -182,7 +205,8 @@ public class HdrHistogramSummary
         double pooledVarianceDenominator = TotalCount + other.TotalCount - 2;
         double pooledStDev = pooledVarianceDenominator <= 0
             ? 0
-            : Math.Sqrt(((TotalCount - 1) * StDev * StDev + (other.TotalCount - 1) * other.StDev * other.StDev) / pooledVarianceDenominator);
+            : Math.Sqrt(((TotalCount - 1) * StDev * StDev + (other.TotalCount - 1) * other.StDev * other.StDev) /
+                        pooledVarianceDenominator);
         string dValue = pooledStDev == 0
             ? (Mean == other.Mean ? "0.00" : "n/a")
             : ((other.Mean - Mean) / pooledStDev).ToString("0.00");
@@ -196,6 +220,7 @@ public class HdrHistogramSummary
 
         static string R(string s, int w) => s.PadLeft(w);
         static string L(string s, int w) => s.PadRight(w);
+
         static string MarkdownSeparatorCell(int width, bool leftAligned, bool rightAligned)
         {
             width = Math.Max(width, 3);
@@ -216,13 +241,15 @@ public class HdrHistogramSummary
         string separatorDelta = new(' ', deltaWidth);
 
         Console.WriteLine($"### {title ?? "Histogram summary delta"}");
-        Console.WriteLine($"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Δ%", deltaWidth)} |");
-        Console.WriteLine($"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(thisValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(otherValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(deltaWidth, leftAligned: false, rightAligned: true)} |");
+        Console.WriteLine(
+            $"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Δ%", deltaWidth)} |");
+        Console.WriteLine(
+            $"| {MarkdownSeparatorCell(percentileColumnWidth, leftAligned: true, rightAligned: false)} | {MarkdownSeparatorCell(thisValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(otherValueWidth, leftAligned: false, rightAligned: true)} | {MarkdownSeparatorCell(deltaWidth, leftAligned: false, rightAligned: true)} |");
 
-        for (int i = 0; i < PercentilesReadOnly.Length; i++)
+        for (int i = 0; i < Percentiles.Length; i++)
         {
-            ref readonly var thisPercentile = ref PercentilesReadOnly[i];
-            ref readonly var otherPercentile = ref other.PercentilesReadOnly[i];
+            ref readonly var thisPercentile = ref Percentiles[i];
+            ref readonly var otherPercentile = ref other.Percentiles[i];
 
             string rankText = thisPercentile.Rank.ToString("0.######");
             string thisValue = thisPercentile.Value.ToString("N0");
@@ -231,15 +258,144 @@ public class HdrHistogramSummary
                 ? (otherPercentile.Value == 0 ? "+0.0%" : "n/a")
                 : $"{((double)otherPercentile.Value - thisPercentile.Value) / thisPercentile.Value * 100.0:+0.0;-0.0;0.0}%";
 
-            Console.WriteLine($"| {L(rankText, percentileColumnWidth)} | {R(thisValue, thisValueWidth)} | {R(otherValue, otherValueWidth)} | {R(delta, deltaWidth)} |");
+            Console.WriteLine(
+                $"| {L(rankText, percentileColumnWidth)} | {R(thisValue, thisValueWidth)} | {R(otherValue, otherValueWidth)} | {R(delta, deltaWidth)} |");
         }
 
-        Console.WriteLine($"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorThis, thisValueWidth)} | {L(separatorOther, otherValueWidth)} | {L(separatorDelta, deltaWidth)} |");
-        Console.WriteLine($"| {L("Mean:", percentileColumnWidth)} | {R(thisMean, thisValueWidth)} | {R(otherMean, otherValueWidth)} | {R(deltaAtMean, deltaWidth)} |");
-        Console.WriteLine($"| {L("StDev:", percentileColumnWidth)} | {R(thisStDev, thisValueWidth)} | {R(otherStDev, otherValueWidth)} | {R(deltaAtStDev, deltaWidth)} |");
-        Console.WriteLine($"| {L("Precision:", percentileColumnWidth)} | {R(thisPrecision, thisValueWidth)} | {R(otherPrecision, otherValueWidth)} | {R(deltaAtPrecision, deltaWidth)} |");
-        Console.WriteLine($"| {L("Total:", percentileColumnWidth)} | {R(thisTotal, thisValueWidth)} | {R(otherTotal, otherValueWidth)} | {R(deltaAtTotal, deltaWidth)} |");
-        Console.WriteLine($"| {L(dValueRowLabel, percentileColumnWidth)} | {L(string.Empty, thisValueWidth)} | {L(string.Empty, otherValueWidth)} | {R(dValue, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorThis, thisValueWidth)} | {L(separatorOther, otherValueWidth)} | {L(separatorDelta, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L("Mean:", percentileColumnWidth)} | {R(thisMean, thisValueWidth)} | {R(otherMean, otherValueWidth)} | {R(deltaAtMean, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L("StDev:", percentileColumnWidth)} | {R(thisStDev, thisValueWidth)} | {R(otherStDev, otherValueWidth)} | {R(deltaAtStDev, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L("Precision:", percentileColumnWidth)} | {R(thisPrecision, thisValueWidth)} | {R(otherPrecision, otherValueWidth)} | {R(deltaAtPrecision, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L("Total:", percentileColumnWidth)} | {R(thisTotal, thisValueWidth)} | {R(otherTotal, otherValueWidth)} | {R(deltaAtTotal, deltaWidth)} |");
+        Console.WriteLine(
+            $"| {L(dValueRowLabel, percentileColumnWidth)} | {L(string.Empty, thisValueWidth)} | {L(string.Empty, otherValueWidth)} | {R(dValue, deltaWidth)} |");
         Console.WriteLine();
     }
+
+    public sealed class HdrHistogramSummaryJsonConverter : JsonConverter<HdrHistogramSummary>
+    {
+        private const double RankEpsilon = 1e-6;
+
+        private const string PropMinTrackableValue = "minTrackableValue";
+        private const string PropMaxTrackableValue = "maxTrackableValue";
+        private const string PropTotalCount = "totalCount";
+        private const string PropOverflowCount = "overflowCount";
+        private const string PropMean = "mean";
+        private const string PropStDev = "stDev";
+        private const string PropPercentiles = "percentiles";
+
+        public override HdrHistogramSummary Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var summary = new HdrHistogramSummary();
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject) break;
+                if (reader.TokenType != JsonTokenType.PropertyName) continue;
+
+                string propName = reader.GetString()!;
+                reader.Read();
+
+                switch (propName)
+                {
+                    case PropMinTrackableValue: summary.MinTrackableValue = reader.GetUInt64(); break;
+                    case PropMaxTrackableValue: summary.MaxTrackableValue = reader.GetUInt64(); break;
+                    case PropTotalCount: summary.TotalCount = reader.GetUInt64(); break;
+                    case PropOverflowCount: summary.OverflowCount = reader.GetUInt64(); break;
+                    case PropMean: summary.Mean = reader.GetDouble(); break;
+                    case PropStDev: summary.StDev = reader.GetDouble(); break;
+                    case PropPercentiles:
+                        ReadPercentiles(ref reader, options, summary);
+                        break;
+                    default:
+                        reader.Skip();
+                        break;
+                }
+            }
+
+            return summary;
+        }
+
+        private static void ReadPercentiles(ref Utf8JsonReader reader, JsonSerializerOptions options, HdrHistogramSummary summary)
+        {
+            var expectedRanks = SummaryRanks;
+            int i = 0;
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndArray) break;
+
+                if (i >= 16)
+                    throw new JsonException($"Too many percentiles in array: expected exactly {expectedRanks.Length}.");
+
+                var percentile = JsonSerializer.Deserialize<Percentile>(ref reader, options);
+                double expectedRank = expectedRanks[i];
+
+                if (Math.Abs(percentile.Rank - expectedRank) > RankEpsilon)
+                    throw new JsonException(
+                        $"Percentile at index {i} has rank {percentile.Rank} but expected {expectedRank} (tolerance ±{RankEpsilon}).");
+
+                summary._percentiles[i] = percentile;
+                i++;
+            }
+
+            if (i != expectedRanks.Length)
+                throw new JsonException($"Expected {expectedRanks.Length} percentiles but got {i}.");
+        }
+
+        public override void Write(Utf8JsonWriter writer, HdrHistogramSummary value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber(PropMinTrackableValue, value.MinTrackableValue);
+            writer.WriteNumber(PropMaxTrackableValue, value.MaxTrackableValue);
+            writer.WriteNumber(PropTotalCount, value.TotalCount);
+            writer.WriteNumber(PropOverflowCount, value.OverflowCount);
+            writer.WriteNumber(PropMean, value.Mean);
+            writer.WriteNumber(PropStDev, value.StDev);
+            writer.WritePropertyName(PropPercentiles);
+            writer.WriteStartArray();
+            foreach (ref readonly var percentile in value.Percentiles)
+                JsonSerializer.Serialize(writer, percentile, options);
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+    }
+
+    public bool Equals(HdrHistogramSummary? other)
+    {
+        if (other is null)
+            return false;
+
+        if (ReferenceEquals(this, other))
+            return true;
+
+        return MinTrackableValue == other.MinTrackableValue
+               && MaxTrackableValue == other.MaxTrackableValue
+               && TotalCount == other.TotalCount
+               && OverflowCount == other.OverflowCount
+               && Mean.Equals(other.Mean)
+               && StDev.Equals(other.StDev)
+               && _percentiles.SequenceEqual(other._percentiles);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        if (obj is null)
+            return false;
+
+        if (ReferenceEquals(this, obj))
+            return true;
+
+        if (obj.GetType() != GetType())
+            return false;
+
+        return Equals((HdrHistogramSummary)obj);
+    }
+
+    public override int GetHashCode() => throw new NotSupportedException();
 }
