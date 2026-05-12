@@ -5,26 +5,26 @@ namespace Picollo.Metrics;
 
 public sealed class HdrHistogramSnapshot : ReadOnlyHdrHistogram, IDisposable
 {
-    public HdrHistogram Histogram { get; }
+    private readonly HdrHistogram _source;
     private HdrHistogram? _snapshot;
     private long _version;
     public DateTime Timestamp { get; private set; }
 
-    internal HdrHistogramSnapshot(HdrHistogram histogram, HdrHistogram snapshot)
+    internal HdrHistogramSnapshot(HdrHistogram source, HdrHistogram snapshot)
     {
-        Histogram = histogram;
+        _source = source;
         _snapshot = snapshot;
         _version = snapshot.Version;
         Timestamp = DateTime.UtcNow;
     }
 
     /// <summary>
-    /// Copies the current counters of the <see cref="Histogram"/>.
+    /// Updates this snapshot with fresh data from the source.
     /// </summary>
     public void Update(bool deltas)
     {
         var current = GetOwnedSnapshot();
-        var updated = Histogram.GetSnapshotInternal(deltas ? current : null);
+        var updated = _source.GetSnapshotInternal(deltas ? current : null);
         var previous = Interlocked.Exchange(ref _snapshot, updated);
 
         if (!ReferenceEquals(previous, updated))

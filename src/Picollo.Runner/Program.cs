@@ -12,20 +12,16 @@ internal class Program
 
         var runs = 10;
         var threads = 4;
-
-
-        // HdrHistogramBenches.LegacyBench(runs);
+        
         HdrHistogramBenches.PicolloBench(runs);
-        // HdrHistogramBenches.PicolloBucketEnumerationBench(runs);
-        return;
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
-
-        HdrHistogramBenches.PicolloThreadLocalBench(runs);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
-
+        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
 
         return;
+        HdrHistogramBenches.PicolloThreadLocalBench(runs);
+        // HdrHistogramBenches.PicolloBucketEnumerationBench(runs);
 
         HdrHistogramBenches.DetectStaleMultiplyStore();
         return;

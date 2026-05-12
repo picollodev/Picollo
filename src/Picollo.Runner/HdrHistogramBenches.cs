@@ -7,7 +7,7 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = 24_000; // (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
+    private static readonly long MaxValue = (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 1; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
     private static readonly bool UseDoublePrecision = true; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
@@ -69,8 +69,7 @@ public class HdrHistogramBenches
         Console.WriteLine(
             $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
         Console.WriteLine();
-        // h.GetSummary().PrettyPrint();
-        // h.GetSummary().PrettyPrint2();
+        
         var summary = h.GetSummary();
         summary.PrettyPrint();
 
@@ -79,8 +78,7 @@ public class HdrHistogramBenches
             h.Record(23050);
         }
         
-        
-        h.GetSummary().PrettyPrintDiff(summary, "Delta summary", "A", "B");
+        summary.PrettyPrintDiff(h.GetSummary(), "Delta summary", "A", "B");
         
     }
 
