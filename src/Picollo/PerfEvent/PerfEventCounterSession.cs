@@ -194,7 +194,7 @@ public unsafe partial class PerfEventCounterSession : IDisposable
             foreach (PerfEventCounter counter in _counters)
             {
                 var pairOverhead = counter.RawDelta.Value;
-                counter.PairReadOverheadHistogram?.Record(pairOverhead);
+                counter.Histogram.Record(pairOverhead);
                 if ((i == 0 || pairOverhead > counter.PairReadOverhead))
                 {
                     counter.PairReadOverhead = pairOverhead;
@@ -204,8 +204,8 @@ public unsafe partial class PerfEventCounterSession : IDisposable
 
         foreach (PerfEventCounter counter in _counters)
         {
-            counter.PairReadOverhead = counter.PairReadOverheadHistogram?.GetPercentileValue(rank: 10) ?? 0;
-            counter.PairReadOverheadHistogram = null;
+            counter.PairReadOverhead = counter.Histogram.GetPercentileValue(rank: 10);
+            counter.Histogram.Reset();
         }
     }
 
@@ -226,6 +226,22 @@ public unsafe partial class PerfEventCounterSession : IDisposable
             ReadFast();
         else
             ReadSlow();
+    }
+
+    /// <summary>
+    /// Records counter values or deltas since the previous read into <seealso cref="PerfEventCounter.Histogram"/>. 
+    /// </summary>
+    /// <remarks>
+    /// It is faster and more convenient to let the session counters accumulate the histogram than to manage each counter manually.
+    /// It is reasonable to expect that opened counters are actually used, otherwise they should not be opened.
+    /// </remarks>
+    /// <param name="deltas">True to record deltas.</param>
+    public void Record(bool deltas)
+    {
+        foreach (PerfEventCounter counter in _counters)
+        {
+            counter.Histogram.Record(deltas ? counter.Delta.ScaledValue : counter.Current.ScaledValue);
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -298,7 +314,10 @@ public unsafe partial class PerfEventCounterSession : IDisposable
         var current = CounterValuesPtr;
         var previous = PreviousCounterValuesPtr;
         for (int i = 0; i < _counters.Count; i++)
+        {
             previous[i] = current[i];
+            _counters[i].Histogram.Reset();
+        }
     }
 
     public override string ToString()
