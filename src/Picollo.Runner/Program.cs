@@ -13,11 +13,11 @@ internal class Program
         var runs = 10;
         var threads = 4;
 
-        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.PicolloBench(runs);
-        return;
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
+
+        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
 
         return;

@@ -188,6 +188,9 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a raw counter specified by a config value.
         /// </summary>
+        /// <remarks>
+        /// For Intel, see: https://perfmon-events.intel.com/
+        /// </remarks>
         public PerfEventCounterSessionFactory WithRawCounter(ulong config)
         {
             WithRawCounter(config, out _);
@@ -197,6 +200,9 @@ public partial class PerfEventCounterSession
         /// <summary>
         /// Add a raw counter specified by a config value and get the counter instance as <paramref name="counter"/>.
         /// </summary>
+        /// <remarks>
+        /// For Intel, see: https://perfmon-events.intel.com/
+        /// </remarks>
         public PerfEventCounterSessionFactory WithRawCounter(ulong config, out PerfEventCounter counter)
         {
             counter = Session.AddCounter(PerfTypeId.Raw, config);

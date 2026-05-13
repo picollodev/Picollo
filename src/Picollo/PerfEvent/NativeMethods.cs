@@ -40,6 +40,25 @@ internal static class NativeMethods
     [SuppressGCTransition]
     public static extern int ReadPerfProgrammableCounters(nint perfEventMmapPages, nint counterValues, nuint length);
 
+    public static bool TryReadCpuPmuInfo(
+        out uint version,
+        out uint programmableCounters,
+        out uint programmableWidth,
+        out uint ebxVectorLength,
+        out uint unavailableEventsEbx,
+        out uint fixedCounters,
+        out uint fixedWidth)
+    {
+        return ReadCpuPmuInfo(
+            out version,
+            out programmableCounters,
+            out programmableWidth,
+            out ebxVectorLength,
+            out unavailableEventsEbx,
+            out fixedCounters,
+            out fixedWidth) != 0;
+    }
+
     public static int PerfEventOpen(in PerfEventAttr attr, int pid, int cpu, int groupFd, nuint flags)
     {
         nint perfEventOpenSyscallNumber = RuntimeInformation.ProcessArchitecture switch
@@ -127,6 +146,16 @@ internal static class NativeMethods
 
     [DllImport("libc", EntryPoint = "syscall", SetLastError = true)]
     private static extern nint SysCallPerfEventOpen(nint number, in PerfEventAttr attr, int pid, int cpu, int groupFd, nuint flags);
+
+    [DllImport(NativeLibrary, EntryPoint = "read_cpu_pmu_info", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int ReadCpuPmuInfo(
+        out uint version,
+        out uint programmableCounters,
+        out uint programmableWidth,
+        out uint ebxVectorLength,
+        out uint unavailableEventsEbx,
+        out uint fixedCounters,
+        out uint fixedWidth);
 
     [DllImport("libc", SetLastError = true, EntryPoint = "ioctl")]
     private static extern int ioctl(int fd, ulong request, nuint arg);

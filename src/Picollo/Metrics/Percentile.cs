@@ -17,7 +17,7 @@ public enum EquivalentValueSelection
 [JsonConverter(typeof(PercentileJsonConverter))]
 public readonly record struct Percentile(double Rank, Bucket Bucket, ulong TargetCount, ulong RunningCount)
 {
-    private const EquivalentValueSelection DefaultSelection = EquivalentValueSelection.LowerBound;
+    private const EquivalentValueSelection DefaultSelection = EquivalentValueSelection.Midpoint;
 
     /// <summary>
     /// Sets the default <see cref="EquivalentValueSelection"/> used for <see cref="Value"/>.

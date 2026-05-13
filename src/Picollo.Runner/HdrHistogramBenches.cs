@@ -10,7 +10,7 @@ public class HdrHistogramBenches
     private static readonly long MaxValue = 30000;// (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 1; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
-    private static readonly bool UseDoublePrecision = true; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
+    private static readonly bool UseDoublePrecision = false; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
 
     private static readonly int Rounds = 100;
 
@@ -18,7 +18,7 @@ public class HdrHistogramBenches
 
     private static long[] InitValues()
     {
-        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.Interpolated;
+        Percentile.DefaultEquivalentValueSelection = EquivalentValueSelection.Midpoint;
 
         var count = 1_000_000;
         var values = new long[count];

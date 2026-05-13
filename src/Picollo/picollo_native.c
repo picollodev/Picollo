@@ -6,7 +6,9 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>
 #include <linux/perf_event.h>
-
+#if defined(__i386__) || defined(__x86_64__)
+#include <cpuid.h>
+#endif
 #if defined(_MSC_VER)
   #include <intrin.h>
   #pragma intrinsic(__rdpmc)
@@ -216,198 +218,52 @@ int read_perf_programmable_counters(const struct perf_event_mmap_page* const* pc
     return 0;
 }
 
-
-/*
-
-TODO With Hyper-threading disabled, Intel often gives 8 counters and not just 4 
-
-// cpuid_pmu.c
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
-
-typedef struct {
-    bool available;
-
-    uint32_t version;
-    uint32_t programmable_counters;
-    uint32_t programmable_width;
-    uint32_t ebx_vector_length;
-
-    uint32_t unavailable_events_ebx;
-
-    uint32_t fixed_counters;
-    uint32_t fixed_width;
-} CpuPmuInfo;
-
-static inline void cpuid_count(
-    uint32_t leaf,
-    uint32_t subleaf,
-    uint32_t *eax,
-    uint32_t *ebx,
-    uint32_t *ecx,
-    uint32_t *edx)
+int read_cpu_pmu_info(uint32_t* version,
+                      uint32_t* programmable_counters,
+                      uint32_t* programmable_width,
+                      uint32_t* ebx_vector_length,
+                      uint32_t* unavailable_events_ebx,
+                      uint32_t* fixed_counters,
+                      uint32_t* fixed_width)
 {
-#if defined(__i386__) && defined(__PIC__)
-    __asm__ volatile(
-        "xchgl %%ebx, %1\n\t"
-        "cpuid\n\t"
-        "xchgl %%ebx, %1"
-        : "=a"(*eax), "=&r"(*ebx), "=c"(*ecx), "=d"(*edx)
-        : "0"(leaf), "2"(subleaf)
-        : "cc");
-#elif defined(__x86_64__) && defined(__PIC__)
-    uint64_t rbx64;
-    __asm__ volatile(
-        "xchgq %%rbx, %q1\n\t"
-        "cpuid\n\t"
-        "xchgq %%rbx, %q1"
-        : "=a"(*eax), "=&r"(rbx64), "=c"(*ecx), "=d"(*edx)
-        : "0"(leaf), "2"(subleaf)
-        : "cc");
-    *ebx = (uint32_t)rbx64;
-#else
-    __asm__ volatile(
-        "cpuid"
-        : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
-        : "0"(leaf), "2"(subleaf)
-        : "cc");
-#endif
-}
-
-static bool cpuid_leaf_exists(uint32_t leaf)
-{
-    uint32_t eax, ebx, ecx, edx;
-    cpuid_count(0, 0, &eax, &ebx, &ecx, &edx);
-    return eax >= leaf;
-}
-
-static CpuPmuInfo read_cpu_pmu_info(void)
-{
-    CpuPmuInfo info = {0};
-
-#if !(defined(__i386__) || defined(__x86_64__))
-    return info;
-#else
-    if (!cpuid_leaf_exists(0x0A)) {
-        return info;
-    }
-
-    uint32_t eax, ebx, ecx, edx;
-    cpuid_count(0x0A, 0, &eax, &ebx, &ecx, &edx);
-
-    info.available = true;
-
-    info.version                =  eax        & 0xffu;
-    info.programmable_counters  = (eax >> 8)  & 0xffu;
-    info.programmable_width     = (eax >> 16) & 0xffu;
-    info.ebx_vector_length      = (eax >> 24) & 0xffu;
-
-    info.unavailable_events_ebx = ebx;
-
-    info.fixed_counters         =  edx        & 0x1fu;
-    info.fixed_width            = (edx >> 5)  & 0xffu;
-
-    return info;
-#endif
-}
-
-int main(void)
-{
-    CpuPmuInfo pmu = read_cpu_pmu_info();
-
-    if (!pmu.available) {
-        printf("CPUID leaf 0x0A is not available; PMU layout is unknown from CPUID\n");
+    if (version == NULL
+        || programmable_counters == NULL
+        || programmable_width == NULL
+        || ebx_vector_length == NULL
+        || unavailable_events_ebx == NULL
+        || fixed_counters == NULL
+        || fixed_width == NULL)
+    {
         return 0;
     }
 
-    printf("PMU version:              %u\n", pmu.version);
-    printf("Programmable counters:    %u\n", pmu.programmable_counters);
-    printf("Programmable width:       %u\n", pmu.programmable_width);
-    printf("EBX vector length:        %u\n", pmu.ebx_vector_length);
-    printf("Unavailable events EBX:   0x%08x\n", pmu.unavailable_events_ebx);
-    printf("Fixed counters:           %u\n", pmu.fixed_counters);
-    printf("Fixed width:              %u\n", pmu.fixed_width);
-
-    return 0;
-}
-
-
-// Without assembly
-
-// cpuid_pmu.c
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdio.h>
+    *version = 0;
+    *programmable_counters = 0;
+    *programmable_width = 0;
+    *ebx_vector_length = 0;
+    *unavailable_events_ebx = 0;
+    *fixed_counters = 0;
+    *fixed_width = 0;
 
 #if defined(__i386__) || defined(__x86_64__)
-#include <cpuid.h>
-#endif
+    unsigned int eax, ebx, ecx, edx;
 
-typedef struct {
-    bool available;
-
-    uint32_t version;
-    uint32_t programmable_counters;
-    uint32_t programmable_width;
-    uint32_t ebx_vector_length;
-
-    uint32_t unavailable_events_ebx;
-
-    uint32_t fixed_counters;
-    uint32_t fixed_width;
-} CpuPmuInfo;
-
-static CpuPmuInfo read_cpu_pmu_info(void)
-{
-    CpuPmuInfo info = {0};
-
-#if defined(__i386__) || defined(__x86_64__)
-    unsigned eax, ebx, ecx, edx;
-
-    unsigned max_leaf = __get_cpuid_max(0, NULL);
-    if (max_leaf < 0x0A) {
-        return info;
-    }
-
-    if (!__get_cpuid_count(0x0A, 0, &eax, &ebx, &ecx, &edx)) {
-        return info;
-    }
-
-    info.available = true;
-
-    info.version               =  eax        & 0xffu;
-    info.programmable_counters = (eax >> 8)  & 0xffu;
-    info.programmable_width    = (eax >> 16) & 0xffu;
-    info.ebx_vector_length     = (eax >> 24) & 0xffu;
-
-    info.unavailable_events_ebx = ebx;
-
-    info.fixed_counters        =  edx        & 0x1fu;
-    info.fixed_width           = (edx >> 5)  & 0xffu;
-#endif
-
-    return info;
-}
-
-int main(void)
-{
-    CpuPmuInfo pmu = read_cpu_pmu_info();
-
-    if (!pmu.available) {
-        printf("CPUID leaf 0x0A is not available; PMU layout is unknown from CPUID\n");
+    if (__get_cpuid_max(0, NULL) < 0x0Au)
         return 0;
-    }
 
-    printf("PMU version:              %u\n", pmu.version);
-    printf("Programmable counters:    %u\n", pmu.programmable_counters);
-    printf("Programmable width:       %u\n", pmu.programmable_width);
-    printf("EBX vector length:        %u\n", pmu.ebx_vector_length);
-    printf("Unavailable events EBX:   0x%08x\n", pmu.unavailable_events_ebx);
-    printf("Fixed counters:           %u\n", pmu.fixed_counters);
-    printf("Fixed width:              %u\n", pmu.fixed_width);
+    if (!__get_cpuid_count(0x0Au, 0, &eax, &ebx, &ecx, &edx))
+        return 0;
 
+    *version = eax & 0xffu;
+    *programmable_counters = (eax >> 8) & 0xffu;
+    *programmable_width = (eax >> 16) & 0xffu;
+    *ebx_vector_length = (eax >> 24) & 0xffu;
+    *unavailable_events_ebx = ebx;
+    *fixed_counters = edx & 0x1fu;
+    *fixed_width = (edx >> 5) & 0xffu;
+
+    return 1;
+#else
     return 0;
+#endif
 }
-
-*/
