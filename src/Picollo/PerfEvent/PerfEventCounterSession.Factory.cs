@@ -9,6 +9,18 @@ public partial class PerfEventCounterSession
                                               && RuntimeInformation.OSArchitecture == Architecture.X64
                                               && NativeMethods.IsSupported();
 
+
+    public static bool TryGetNumberOfCounters(out uint fixedCounters, out uint programmableCounters)
+    {
+        fixedCounters = 0;
+        programmableCounters = 0;
+
+        return IsSupported &&
+               NativeMethods.TryReadCpuPmuInfo(out _, out programmableCounters, out _, out _,
+                   out _, out fixedCounters, out _);
+    }
+
+
     /// <summary>
     /// Returns a new session factory, which can be fluently configured and completed with a call to <see cref="PerfEventCounterSessionFactory.Create"/>.
     /// </summary>
@@ -20,7 +32,8 @@ public partial class PerfEventCounterSession
         internal readonly PerfEventCounterSession Session = null!;
 
         public PerfEventCounterSessionFactory() =>
-            throw new InvalidOperationException($"Cannot use {nameof(PerfEventCounterSession)}.{nameof(PerfEventCounterSessionFactory)} directly.");
+            throw new InvalidOperationException(
+                $"Cannot use {nameof(PerfEventCounterSession)}.{nameof(PerfEventCounterSessionFactory)} directly.");
 
         internal PerfEventCounterSessionFactory(PerfEventCounterSession session)
         {
