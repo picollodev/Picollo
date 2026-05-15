@@ -49,28 +49,28 @@ public abstract partial class HdrHistogram
         /// <summary>
         /// Configures whether the histogram uses interlocked counter updates.
         /// </summary>
-        public HdrHistogramFactory WithInterlocked(bool enabled = true) =>
-            new(_relativeError, _minTrackableValue, _maxTrackableValue, enabled, _useThreadLocal, _useUInt32,
+        public HdrHistogramFactory WithInterlocked() =>
+            new(_relativeError, _minTrackableValue, _maxTrackableValue, true, _useThreadLocal, _useUInt32,
                 _threadLocalAccumulateInterval);
 
         /// <summary>
         /// Configures whether the histogram uses thread-local writer storage.
         /// </summary>
-        public HdrHistogramFactory WithThreadLocal(bool enabled = true, TimeSpan? accumulateInterval = null) =>
+        public HdrHistogramFactory WithThreadLocal(TimeSpan? accumulateInterval = null) =>
             new(
                 _relativeError,
                 _minTrackableValue,
                 _maxTrackableValue,
                 _useInterlocked,
-                enabled,
+                true,
                 _useUInt32,
                 accumulateInterval ?? _threadLocalAccumulateInterval);
 
         /// <summary>
         /// Configures whether the histogram uses 32-bit counter storage.
         /// </summary>
-        public HdrHistogramFactory WithUInt32Storage(bool enabled = true) =>
-            new(_relativeError, _minTrackableValue, _maxTrackableValue, _useInterlocked, _useThreadLocal, enabled,
+        public HdrHistogramFactory WithUInt32Storage() =>
+            new(_relativeError, _minTrackableValue, _maxTrackableValue, _useInterlocked, _useThreadLocal, true,
                 _threadLocalAccumulateInterval);
 
         /// <summary>

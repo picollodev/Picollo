@@ -38,9 +38,9 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
     {
         get
         {
-            var lastVirtualIndex =
+            var lastLogicalIndex =
                 (nuint)Math.Min((long)HdrBuckets.GetLogicalIndexForValue(MaxTrackableValue), HdrBuckets.BlockSize * HdrBuckets.BlockCount - 1);
-            var storageSize = (int)(lastVirtualIndex + 1 - _firstIndexOffset);
+            var storageSize = (int)(lastLogicalIndex + 1 - _firstIndexOffset);
             return storageSize;
         }
     }

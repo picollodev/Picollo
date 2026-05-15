@@ -80,7 +80,18 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
         string totalCountValue = TotalCount.ToString("N0");
         string overflowCountValue = OverflowCount.ToString("N0");
         string precisionValue = $"{relativePrecisionPct:0.0###}%";
-        string maxTrackable = MaxTrackableValue == ulong.MaxValue ? "" : $"{MaxTrackableValue:N0}";
+
+        string maxTrackable = MinTrackableValue == 0 && MaxTrackableValue == ulong.MaxValue
+            ? ""
+            : MaxTrackableValue switch
+            {
+                // It's actually nice when too wide value makes a narrow output ugly, it reminds to adjust the max
+                // ulong.MaxValue => "UInt64.MaxValue",
+                long.MaxValue => "Int64.MaxValue",
+                uint.MaxValue => "UInt32.MaxValue",
+                int.MaxValue => "Int32.MaxValue",
+                _ => $"{MaxTrackableValue:N0}"
+            };
 
         int percentileColumnWidth = Math.Max(Math.Max("Percentile".Length, "Precision:".Length), "Overflow".Length);
         int valueWidth = Math.Max("Value".Length,
@@ -158,7 +169,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
 
         if (MinTrackableValue != 0 || MaxTrackableValue != ulong.MaxValue)
             Console.WriteLine(
-                $"| {L("Tr.Range:", percentileColumnWidth)} | {R($"{MinTrackableValue:N0}", valueWidth)} | {L("to", plusMinusWidth)} | {R(maxTrackable, countWidth)} |");
+                $"| {L("Range Min:", percentileColumnWidth)} | {R($"{MinTrackableValue:N0}", valueWidth)} | {L("Max:", plusMinusWidth)} | {R(maxTrackable, countWidth)} |");
         Console.WriteLine();
     }
 

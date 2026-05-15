@@ -31,7 +31,7 @@ internal readonly struct HdrBuckets
     public nuint GetLogicalIndexForValue(ulong value)
     {
         int blockIndex = 64 - BitOperations.LeadingZeroCount(value >> BlockScale);
-        int stepScale = blockIndex - (blockIndex != 0 ? 1 : 0); // No branches, JIT recognizes it's just the result of !=
+        int stepScale = blockIndex - (blockIndex != 0 ? 1 : 0); // No branches, Roslyn recognizes it's just the result of !=
         ulong bucketIndexInBlock = (value >> stepScale) & ((1u << BlockScale) - 1);
         var index = (((nuint)(uint)blockIndex << BlockScale) + (nuint)bucketIndexInBlock);
         return index;

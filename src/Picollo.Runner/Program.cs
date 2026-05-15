@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
 using Picollo.PerfEvent;
 
 namespace Picollo.Runner;
@@ -10,6 +11,10 @@ internal class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
 
+        HdrHistogramSamples.GettingStarted();
+        return;
+        
+        
         var runs = 10;
         var threads = 4;
 

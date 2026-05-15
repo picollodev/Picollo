@@ -1,5 +1,9 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using HdrHistogram;
 using Picollo.Metrics;
 
@@ -7,7 +11,7 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = 30000;// (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
+    private static readonly long MaxValue = (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
     private static readonly int RandomPower = 1; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
     private static readonly bool UseDoublePrecision = false; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
@@ -61,7 +65,7 @@ public class HdrHistogramBenches
     public static void PicolloBench(int runs = 10)
     {
         Console.WriteLine("# PicolloBench");
-        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 0, (ulong)MaxValue);
+        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 1, ulong.MaxValue);
         Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
 
         PicolloWorkload(h, runs);
