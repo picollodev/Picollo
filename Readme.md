@@ -2,6 +2,8 @@
 
 Tools for serious performance work in .NET
 
+Available as `Picollo` package from [NuGet](https://www.nuget.org/packages/picollo).
+
 v0.1.0:
 
 * Picollo - runtime instrumentation utils: fast HDR histogram and perf_event API
