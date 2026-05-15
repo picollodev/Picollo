@@ -56,10 +56,15 @@ public struct NanoScope : IDisposable
         _value = (ulong)Stopwatch.GetTimestamp();
     }
 
+    public ulong ElapsedNanos => TicksToNanos((ulong)Stopwatch.GetTimestamp() - _value);
+
+    public static ulong TicksToNanos(ulong stopwatchTicks) => (stopwatchTicks) * 1_000_000_000UL / (ulong)Stopwatch.Frequency;
+
+    public static ulong TicksToNanos(long stopwatchTicks) => TicksToNanos((ulong)stopwatchTicks);
+
     public void Dispose()
     {
-        ulong elapsed = (ulong)Stopwatch.GetTimestamp() - _value;
-        _histogram?.Record(elapsed * 1_000_000_000UL / (ulong)Stopwatch.Frequency);
+        _histogram?.Record(ElapsedNanos);
         _histogram = null;
     }
 }

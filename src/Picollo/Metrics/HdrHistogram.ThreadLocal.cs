@@ -20,7 +20,8 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
 
     private static readonly ConcurrentDictionary<int, WeakReference<HistogramSlot[]?>> KnownSlotsByThreadId = new();
 
-    [ThreadStatic] private static HistogramSlot[]? ts_slots;
+    [ThreadStatic]
+    private static HistogramSlot[]? ts_slots;
 
     private static readonly List<bool> UsedTlsIndices = new(128);
 
@@ -188,7 +189,10 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
                     children = _children = newChildren;
                 }
 
-                histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue) {OwnerThreadId = threadId};
+                histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue)
+                {
+                    OwnerThreadId = threadId
+                };
 
                 children[idx] = histogram;
                 return histogram;
@@ -494,11 +498,14 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
         return new HdrHistogramSnapshot(this, _accumulator.GetSnapshotInternal());
     }
 
-    internal override HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null)
+    internal override HdrHistogram GetSnapshotInternal()
     {
         Accumulate();
-        return _accumulator.GetSnapshotInternal(baseHistogram);
+        return _accumulator.GetSnapshotInternal();
     }
+
+    internal override void Add(HdrHistogram other) => throw new NotSupportedException();
+    internal override void Subtract(HdrHistogram other) => throw new NotSupportedException();
 
     internal override Bucket GetBucketAtStorageIndex(nuint storageIndex) => _accumulator.GetBucketAtStorageIndex(storageIndex);
 }

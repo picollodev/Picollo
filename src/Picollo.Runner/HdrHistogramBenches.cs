@@ -11,12 +11,12 @@ namespace Picollo.Runner;
 
 public class HdrHistogramBenches
 {
-    private static readonly long MaxValue = (long)MicroScope.OneSecondValue; // 7716549600; // 1000_000_000L * 3600;
-    private static readonly int RandomPower = 1; // Skews values down
+    private static readonly long MaxValue = long.MaxValue; // 30000; // 7716549600; // The legacy default MaxTrackable used in their tests
+    private static readonly int RandomPower = 3; // Skews values down
     private static readonly int SignificantDigits = 3; // Affects the footprint much more than max value
-    private static readonly bool UseDoublePrecision = false; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
+    private static readonly bool UseDoublePrecision = true; // Legacy allocates 2x more slots than needed to guarantee midpoint precision
 
-    private static readonly int Rounds = 100;
+    private static readonly int Rounds = 50;
 
     private static readonly long[] Values = InitValues();
 
@@ -29,8 +29,8 @@ public class HdrHistogramBenches
         Random random = new Random(42);
         for (int i = 0; i < count; i++)
         {
-            values[i] = (long)(20000 + random.NextDouble() * 2000 + random.NextDouble() * 1000 + random.NextDouble() * 5 +
-                               random.NextDouble() * 250); // (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
+            values[i] = (long)(Math.Pow(random.NextDouble(), RandomPower) * MaxValue);
+            // (long)(20000 + random.NextDouble() * 2000 + random.NextDouble() * 1000 + random.NextDouble() * 5 + random.NextDouble() * 250); 
         }
 
         random.Shuffle(values);
@@ -57,7 +57,7 @@ public class HdrHistogramBenches
 
             var totalOps = Rounds * Values.Length;
             var elapsed = sw.Elapsed;
-            var perOp = elapsed.TotalNanoseconds / totalOps;
+            var perOp = sw.ElapsedNanos /* Picollo extension property */ / (double)totalOps;
             Console.WriteLine($"[{threadId}] Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
     }
@@ -65,7 +65,7 @@ public class HdrHistogramBenches
     public static void PicolloBench(int runs = 10)
     {
         Console.WriteLine("# PicolloBench");
-        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 1, ulong.MaxValue);
+        var h = new HdrHistogram<uint>((UseDoublePrecision ? 0.5 : 1) / Math.Pow(10.0, SignificantDigits), 1, (ulong)MaxValue);
         Console.WriteLine($"Footprint in bytes: {h.FootprintInBytes:N0}");
 
         PicolloWorkload(h, runs);
@@ -73,19 +73,6 @@ public class HdrHistogramBenches
         Console.WriteLine(
             $"Percentiles: P1 {h.GetPercentileValue(1):N0}, P50 {h.GetPercentileValue(50):N0}, P90 {h.GetPercentileValue(90):N0}, P99 {h.GetPercentileValue(99):N0}, P99.9 {h.GetPercentileValue(99.9):N0}");
         Console.WriteLine();
-        
-        // h.Record(ulong.MaxValue);
-        
-        var summary = h.GetSummary();
-        summary.PrettyPrint();
-
-        for (int i = 0; i < 100_000_000; i++)
-        {
-            h.Record(23050);
-        }
-        
-        summary.PrettyPrintDiff(h.GetSummary(), "Delta summary", "A", "B");
-        
     }
 
     public static void PicolloConcurrentBench(int runs = 10, int threads = 2, bool threadLocal = false, ulong? maxValue = null)
@@ -180,13 +167,12 @@ public class HdrHistogramBenches
     private static void LegacyWorkload(HistogramBase h, int runs, int threadId = 0)
     {
         var sw = Stopwatch.StartNew();
-        int rounds = (Rounds / 10);
 
         for (int x = 0; x < runs; x++)
         {
             sw.Restart();
 
-            for (int r = 0; r < rounds; r++)
+            for (int r = 0; r < Rounds; r++)
             {
                 foreach (long value in Values)
                 {
@@ -196,9 +182,9 @@ public class HdrHistogramBenches
 
             sw.Stop();
 
-            var totalOps = (Rounds / 10) * Values.Length;
+            var totalOps = Rounds * Values.Length;
             var elapsed = sw.Elapsed;
-            var perOp = elapsed.TotalNanoseconds / totalOps;
+            var perOp = sw.ElapsedNanos / (double)totalOps;
             Console.WriteLine($"[{threadId}] Elapsed: {elapsed}, perOp: {perOp:N2} ns");
         }
     }
@@ -282,7 +268,7 @@ public class HdrHistogramBenches
                 // manualCount = 0UL;
                 // foreach (var bucket in h.Buckets)
                 // {
-                    // manualCount += bucket.Count;
+                // manualCount += bucket.Count;
                 // }
             }
 
@@ -381,7 +367,6 @@ public class HdrHistogramBenches
                     {
                         if (Math.Abs(seen) > maxBadSeen)
                             maxBadSeen = Math.Abs(seen);
-                        // Console.WriteLine($"Bad {bad}, seen {seen:N0}, expected {expectedSign} in {sw.Elapsed.TotalMicroseconds:N0}");
                         bad++;
                     }
                 }
@@ -398,7 +383,7 @@ public class HdrHistogramBenches
 
         while (!cts.IsCancellationRequested)
         {
-            var c = 1.00001;
+            var c = 1.0001;
             for (long i = 0; i < iterations; i++)
             {
                 _value *= c; // load, multiply, store
@@ -407,8 +392,8 @@ public class HdrHistogramBenches
 
         cleaner.Wait();
         Console.WriteLine();
-        Console.WriteLine($"iterations: {rounds * iterations:N0}");
-        Console.WriteLine($"bad signs:  {bad:N0}");
-        Console.WriteLine($"max bad seen:  {maxBadSeen:N0}");
+        Console.WriteLine($"Iterations: {rounds * iterations:N0}");
+        Console.WriteLine($"Bad signs:  {bad:N0}");
+        Console.WriteLine($"Max bad seen:  {maxBadSeen:N2}");
     }
 }

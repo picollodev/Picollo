@@ -25,7 +25,6 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     internal UnsafeSpan<TCounter> Data;
     internal TCounter OverflowSlot;
     internal volatile int OwnerThreadId;
-    internal volatile int ResetCount;
 
     private HdrHistogram()
     {
@@ -179,7 +178,6 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         }
     }
 
-
     public override Percentile GetPercentile(double rank)
     {
         Span<double> ranks = stackalloc double[1];
@@ -195,7 +193,6 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         doGetSnapshotInternal
             .GetPercentilesAndStats(sortedRanks, percentiles, out _, ref Unsafe.NullRef<double>(), ref Unsafe.NullRef<double>());
     }
-
 
     public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null)
     {
@@ -214,6 +211,7 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         instance.OverflowCount = TtoUlong(ref snapshot.OverflowSlot);
         instance.Mean = mean;
         instance.StDev = stDev;
+        instance.TimestampUtc = DateTime.UtcNow;
 
         return instance;
     }
@@ -349,11 +347,28 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
         return true;
     }
 
-    // Bad for public API, this should be exposed on the snapshot
-    internal void Add(HdrHistogram<TCounter> other)
+    internal override void Add(HdrHistogram other)
+    {
+        var histogram = (HdrHistogram<TCounter, TAddition>)other;
+        DoAdd(histogram);
+    }
+
+    internal override void Subtract(HdrHistogram other)
+    {
+        var histogram = (HdrHistogram<TCounter, TAddition>)other;
+        DoSubtract(histogram);
+    }
+
+    private void DoAdd(HdrHistogram<TCounter, TAddition> other)
     {
         OverflowSlot += UlongToT<TCounter>(other.OverflowCount);
-        TensorPrimitives.Add(other.Data.AsSpan(), Data.AsSpan(), Data.AsSpan());
+        TensorPrimitives.Add(Data.AsSpan(), other.Data.AsSpan(), Data.AsSpan());
+    }
+
+    private void DoSubtract(HdrHistogram<TCounter, TAddition> other)
+    {
+        OverflowSlot -= UlongToT<TCounter>(other.OverflowCount);
+        TensorPrimitives.Subtract(Data.AsSpan(), other.Data.AsSpan(), Data.AsSpan());
     }
 
     private TResult ReadConsistent<TResult>(Func<HdrHistogram<TCounter, TAddition>, TResult> reader)
@@ -398,36 +413,36 @@ internal class HdrHistogram<TCounter, TAddition> : HdrHistogram
     // A pool of 1, just to reduce read allocs
     private static HdrHistogram<TCounter, TAddition>? s_pool;
 
-    internal override HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null)
+    internal override HdrHistogram GetSnapshotInternal()
     {
         var snapshot = DoGetSnapshotInternal();
 
-        if (baseHistogram is null)
-            return snapshot;
-
-        if (baseHistogram is not HdrHistogram<TCounter, TAddition> baseSnapshot)
-        {
-            snapshot.Dispose();
-            throw new ArgumentException("Base snapshot type is incompatible with this histogram.", nameof(baseHistogram));
-        }
-
-        if (baseSnapshot._firstIndexOffset != snapshot._firstIndexOffset
-            || baseSnapshot.Data.Count != snapshot.Data.Count
-            || baseSnapshot.MinTrackableValue != snapshot.MinTrackableValue
-            || baseSnapshot.MaxTrackableValue != snapshot.MaxTrackableValue
-            || baseSnapshot.HdrBuckets.RelativeError != snapshot.HdrBuckets.RelativeError)
-        {
-            snapshot.Dispose();
-            throw new ArgumentException("Base snapshot shape is incompatible with this histogram.", nameof(baseHistogram));
-        }
-
-        if (snapshot.ResetCount != baseSnapshot.ResetCount)
-            return snapshot;
-
-        snapshot.OverflowSlot -= baseSnapshot.OverflowSlot;
-
-        for (nint i = 0; i < snapshot.Data.LongCount; i++)
-            snapshot.Data.GetAtUnsafe(i) -= baseSnapshot.Data.GetAtUnsafe(i);
+        // if (baseHistogram is null)
+        //     return snapshot;
+        //
+        // if (baseHistogram is not HdrHistogram<TCounter, TAddition> baseSnapshot)
+        // {
+        //     snapshot.Dispose();
+        //     throw new ArgumentException("Base snapshot type is incompatible with this histogram.", nameof(baseHistogram));
+        // }
+        //
+        // if (baseSnapshot._firstIndexOffset != snapshot._firstIndexOffset
+        //     || baseSnapshot.Data.Count != snapshot.Data.Count
+        //     || baseSnapshot.MinTrackableValue != snapshot.MinTrackableValue
+        //     || baseSnapshot.MaxTrackableValue != snapshot.MaxTrackableValue
+        //     || Math.Abs(baseSnapshot.HdrBuckets.RelativeError - snapshot.HdrBuckets.RelativeError) > 0.000001)
+        // {
+        //     snapshot.Dispose();
+        //     throw new ArgumentException("Base snapshot shape is incompatible with this histogram.", nameof(baseHistogram));
+        // }
+        //
+        // if (snapshot.ResetCount != baseSnapshot.ResetCount)
+        //     return snapshot;
+        //
+        // snapshot.OverflowSlot -= baseSnapshot.OverflowSlot;
+        //
+        // for (nint i = 0; i < snapshot.Data.LongCount; i++)
+        //     snapshot.Data.GetAtUnsafe(i) -= baseSnapshot.Data.GetAtUnsafe(i);
 
         return snapshot;
     }

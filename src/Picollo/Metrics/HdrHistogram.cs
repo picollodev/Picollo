@@ -9,11 +9,11 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
     internal HdrBuckets HdrBuckets;
     protected nuint _firstIndexOffset;
     internal long Version;
-
+    internal volatile int ResetCount;
+    
     public ulong MinTrackableValue { get; protected set; }
     public ulong MaxTrackableValue { get; protected set; }
-
-
+    
     protected HdrHistogram(double relativeError = 0.001, ulong minTrackableValue = 0, ulong maxTrackableValue = ulong.MaxValue)
     {
         if (minTrackableValue >= maxTrackableValue)
@@ -67,8 +67,12 @@ public abstract partial class HdrHistogram : ReadOnlyHdrHistogram, IDisposable
     public abstract override HdrHistogramSnapshot GetSnapshot();
 
     internal abstract Bucket GetBucketAtStorageIndex(nuint storageIndex);
+
+    internal abstract HdrHistogram GetSnapshotInternal();
     
-    internal abstract HdrHistogram GetSnapshotInternal(HdrHistogram? baseHistogram = null);
+    internal abstract void Add(HdrHistogram other);
+
+    internal abstract void Subtract(HdrHistogram other);
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static ulong TtoUlong<TCounter>(TCounter value) where TCounter : unmanaged, IBinaryInteger<TCounter>, IUnsignedNumber<TCounter>

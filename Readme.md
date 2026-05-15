@@ -2,7 +2,8 @@
 
 Tools for serious performance work in .NET
 
-Project:
+v0.1.0:
 
-* Picollo - runtime instrumentation utils, fast HDR histogram, perf_event API
-* Picollo.Cli - a CLI `picollo` tool to run performance measurement sessions: benchmarks/profiling/tracing
+* Picollo - runtime instrumentation utils: fast HDR histogram and perf_event API
+
+See https://hotforknowledge.com/2026/05/15/introducing-picollo/ for details.

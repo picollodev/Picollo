@@ -5,17 +5,20 @@ namespace Picollo.Metrics;
 
 public sealed class HdrHistogramSnapshot : ReadOnlyHdrHistogram, IDisposable
 {
-    private readonly HdrHistogram _source;
-    private HdrHistogram? _snapshot;
-    private long _version;
-    public DateTime Timestamp { get; private set; }
+    private readonly HdrHistogram _liveSource;
+    private HdrHistogram _lastBaseLine;
+    private HdrHistogram? _deltaSnapshot;
 
-    internal HdrHistogramSnapshot(HdrHistogram source, HdrHistogram snapshot)
+    private HdrHistogram _current;
+
+    public DateTime TimestampUtc { get; private set; }
+
+    internal HdrHistogramSnapshot(HdrHistogram liveSource, HdrHistogram lastBaseLine)
     {
-        _source = source;
-        _snapshot = snapshot;
-        _version = snapshot.Version;
-        Timestamp = DateTime.UtcNow;
+        _liveSource = liveSource;
+        _lastBaseLine = lastBaseLine;
+        _current = lastBaseLine;
+        TimestampUtc = DateTime.UtcNow;
     }
 
     /// <summary>
@@ -23,15 +26,33 @@ public sealed class HdrHistogramSnapshot : ReadOnlyHdrHistogram, IDisposable
     /// </summary>
     public void Update(bool deltas)
     {
-        var current = GetOwnedSnapshot();
-        var updated = _source.GetSnapshotInternal(deltas ? current : null);
-        var previous = Interlocked.Exchange(ref _snapshot, updated);
+        ObjectDisposedException.ThrowIf(_lastBaseLine is null, this);
+        
+        var newBaseLine = _liveSource.GetSnapshotInternal();
 
-        if (!ReferenceEquals(previous, updated))
-            previous?.Dispose();
+        if (deltas && newBaseLine.ResetCount == _lastBaseLine.ResetCount)
+        {
+            if (_deltaSnapshot is { } deltaSnapshot)
+            {
+                deltaSnapshot.Reset();
+                deltaSnapshot.Add(newBaseLine);
+            }
+            else
+            {
+                _deltaSnapshot = deltaSnapshot = newBaseLine.GetSnapshotInternal();
+            }
 
-        _version = updated.Version;
-        Timestamp = DateTime.UtcNow;
+            deltaSnapshot.Subtract(_lastBaseLine);
+            _current = deltaSnapshot;
+        }
+        else
+        {
+            _current = newBaseLine;
+        }
+
+        Interlocked.Exchange(ref _lastBaseLine, newBaseLine).Dispose();
+
+        TimestampUtc = DateTime.UtcNow;
     }
 
     public override ulong OverflowCount => GetOwnedSnapshot().OverflowCount;
@@ -54,24 +75,26 @@ public sealed class HdrHistogramSnapshot : ReadOnlyHdrHistogram, IDisposable
 
     public override Bucket GetBucket(ulong value) => GetOwnedSnapshot().GetBucket(value);
 
-    public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null) =>
-        GetOwnedSnapshot().GetSummary(reuseInstance);
-
-    public override HdrHistogramSnapshot GetSnapshot()
+    public override HdrHistogramSummary GetSummary(HdrHistogramSummary? reuseInstance = null)
     {
-        var snapshot = GetOwnedSnapshot();
-        return new HdrHistogramSnapshot(snapshot, snapshot.GetSnapshotInternal());
+        HdrHistogramSummary summary = GetOwnedSnapshot().GetSummary(reuseInstance);
+        summary.TimestampUtc = TimestampUtc;
+        return summary;
     }
+
+    public override HdrHistogramSnapshot GetSnapshot() => new(_liveSource, GetOwnedSnapshot().GetSnapshotInternal());
 
     public void Dispose()
     {
-        var snapshot = Interlocked.Exchange(ref _snapshot, null);
-        snapshot?.Dispose();
+        // ReSharper disable once ConstantConditionalAccessQualifier
+        Interlocked.Exchange(ref _lastBaseLine, null!)?.Dispose();
+        Interlocked.Exchange(ref _deltaSnapshot, null)?.Dispose();
+        _current = null!; // Current does not own its object
     }
 
     private HdrHistogram GetOwnedSnapshot()
     {
-        var snapshot = Volatile.Read(ref _snapshot);
+        var snapshot = Volatile.Read(ref _current);
         ObjectDisposedException.ThrowIf(snapshot is null, this);
         return snapshot;
     }

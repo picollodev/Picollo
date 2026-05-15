@@ -9,6 +9,8 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
 {
     public static ReadOnlySpan<double> SummaryRanks => [0, 1, 5, 10, 25, 50, 75, 90, 92.5, 95, 97.5, 99, 99.9, 99.99, 99.999, 100];
 
+    public DateTime TimestampUtc { get; internal set; }
+    
     public ulong MinTrackableValue { get; internal set; }
     public ulong MaxTrackableValue { get; internal set; }
 
@@ -133,7 +135,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
         string separatorPlusMinus = new(' ', plusMinusWidth);
         string separatorCount = new(' ', countWidth);
 
-        Console.WriteLine($"### {title ?? "Histogram summary"}");
+        Console.WriteLine($"##### {(string.IsNullOrWhiteSpace(title) ? "Histogram summary" : title)}");
         Console.WriteLine(
             $"| {L("Percentile", percentileColumnWidth)} | {R("Value", valueWidth)} | {L("±", plusMinusWidth)} | {R("Count", countWidth)} |");
         Console.WriteLine(
@@ -251,7 +253,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
         string separatorOther = new(' ', otherValueWidth);
         string separatorDelta = new(' ', deltaWidth);
 
-        Console.WriteLine($"### {title ?? "Histogram summary delta"}");
+        Console.WriteLine($"##### {(string.IsNullOrWhiteSpace(title) ? "Histogram summary diff" : title)}");
         Console.WriteLine(
             $"| {L("Percentile", percentileColumnWidth)} | {R(thisName, thisValueWidth)} | {R(otherName, otherValueWidth)} | {R("Δ%", deltaWidth)} |");
         Console.WriteLine(
@@ -273,6 +275,8 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
                 $"| {L(rankText, percentileColumnWidth)} | {R(thisValue, thisValueWidth)} | {R(otherValue, otherValueWidth)} | {R(delta, deltaWidth)} |");
         }
 
+        // TODO Overflow count diff
+
         Console.WriteLine(
             $"| {L(separatorPercentile, percentileColumnWidth)} | {L(separatorThis, thisValueWidth)} | {L(separatorOther, otherValueWidth)} | {L(separatorDelta, deltaWidth)} |");
         Console.WriteLine(
@@ -287,6 +291,11 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
             $"| {L(dValueRowLabel, percentileColumnWidth)} | {L(string.Empty, thisValueWidth)} | {L(string.Empty, otherValueWidth)} | {R(dValue, deltaWidth)} |");
         Console.WriteLine();
     }
+
+    public string ToString(string? title) =>
+        $"{(string.IsNullOrWhiteSpace(title) ? "Histogram summary" : title)}: Total={TotalCount:N0}, Overflow={OverflowCount:N0}, Mean={Mean:N1}, P0={P0.Value:N0}, P25={P25.Value:N0}, P50={P50.Value:N0}, P90={P90.Value:N0}, P95={P95.Value:N0}, P99={P99.Value:N0}, P999={P999.Value:N0}, P100={P100.Value:N0}";
+
+    public override string ToString() => ToString(null);
 
     public sealed class HdrHistogramSummaryJsonConverter : JsonConverter<HdrHistogramSummary>
     {

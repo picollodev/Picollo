@@ -230,5 +230,8 @@ public partial class PerfEventCounterSession
             Session.Open();
             return Session;
         }
+        
+        
+        // TODO WithFastPathIfAvailable() - there is no way to always use the syscall, not just per read. But HasUserRdpmc can be just forced to false
     }
 }

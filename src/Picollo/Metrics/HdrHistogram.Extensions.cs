@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 
 namespace Picollo.Metrics;
 
@@ -10,7 +11,7 @@ public static partial class HdrHistogramExtensions
         /// Returns an enumerable over each bucket in the <paramref name="histogram"/>, including empty buckets. 
         /// </summary>
         public Buckets Buckets => new(histogram);
-        
+
         /// <summary>
         /// Returns an enumerable over non-empty buckets in the <paramref name="histogram"/>. 
         /// </summary>
@@ -78,5 +79,10 @@ public static partial class HdrHistogramExtensions
             double variance = squaredDeviationSum / totalCount;
             return Math.Sqrt(Math.Max(0, variance));
         }
+    }
+
+    extension(Stopwatch stopwatch)
+    {
+        public ulong ElapsedNanos => NanoScope.TicksToNanos(stopwatch.ElapsedTicks);
     }
 }

@@ -10,26 +10,27 @@ internal class Program
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
         Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
-
-        HdrHistogramSamples.GettingStarted();
-        return;
         
+        PerfSessionSamples.PerfSessionSorted();
+        return;
         
         var runs = 10;
-        var threads = 4;
-
-        HdrHistogramBenches.PicolloBench(runs);
-        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, true);
+        var threads = 2;
+        
+        HdrHistogramBenches.PicolloConcurrentBench(runs, threads, threadLocal: true);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);
-
-        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.LegacyConcurrentBench(runs, threads);
-
         return;
+        
+        HdrHistogramBenches.PicolloBench(runs);
+        HdrHistogramBenches.LegacyBench(runs);
         HdrHistogramBenches.PicolloThreadLocalBench(runs);
         // HdrHistogramBenches.PicolloBucketEnumerationBench(runs);
 
-        HdrHistogramBenches.DetectStaleMultiplyStore();
+        HdrHistogramBenches.DetectStaleMultiplyStore(1);
+        return;
+        
+        HdrHistogramSamples.GettingStartedClockResolution();
         return;
 
 

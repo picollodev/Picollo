@@ -2,12 +2,130 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Picollo.Metrics;
 using Picollo.PerfEvent;
 
 namespace Picollo.Runner;
 
 public class PerfSessionSamples
 {
+    public static void PerfSessionGettingStarted()
+    {
+        if (!PerfEventCounterSession.TryGetNumberOfCounters(out uint fixedCounters, out uint programmableCounters))
+            Console.WriteLine("CPU PMU: unavailable");
+
+        Console.WriteLine($"CPU PMU: fixedCounters={fixedCounters}, programmableCounters={programmableCounters}");
+
+        var counterSession = PerfEventCounterSession.Factory
+            .WithTarget((int)0, -1) // By default, it's the current OS thread on any CPU core
+            .WithPinned(true) // Schedule all or nothing
+            .WithKernel(false) // Depends, for pure C# userspace code better to have it false
+            .WithEnabled(true) // Start as enabled, usually the right choice unless there are reasons, e.g. multiple sessions
+            // .WithHardwareCounters(PerfHwId.CpuCycles)
+            // .WithHardwareCounters(PerfHwId.Instructions)
+            // .WithHardwareCounters(PerfHwId.RefCpuCycles)
+            .WithFixedCounters() // Same as the 3 commented above. They are usually available and do not consume programmable counter slots
+            .WithHardwareCounter(PerfHardwareCounterId.BranchMisses)
+            .WithCacheCounter(PerfCacheCounterId.L1DReadMiss)
+            .WithCacheCounter(PerfCacheCounterId.L1IReadMiss)
+            // Often it's trial & error, even the standard counters may be unavailable
+            // E.g. the next two do not work on WSL
+            // .WithCacheCounter(PerfCacheCounterId.LLReadAccess) // Poor man's proxy for L2 misses
+            // .WithCacheCounter(PerfCacheCounterId.LLReadMiss)
+            .Create();
+
+        for (int i = 0; i < 10_000; i++)
+        {
+            // Record the current state of the counters
+            // ForceSyscallRead forces the read to always use a syscall even if a RDPMC-based fast path is available.
+            // It's more stable and atomic per session, but significantly slower.
+            counterSession.Read(forceSyscallRead: true);
+
+            // A helper that contains 256 simple instructions that cannot be reordered or optimized
+            // The expected work is 256k cycles
+            CpuUtils.AddChain256(1000);
+
+            // Record the counters again. The implementation keeps track of the previous read result and can calculate deltas 
+            counterSession.Read(forceSyscallRead: true);
+
+            // Record counter delta values into per-counter HDR histogram  
+            counterSession.Record(deltas: true);
+
+            if (i == 1000)
+                counterSession.Reset(); // Warm up
+        }
+
+        foreach (PerfEventCounter counter in counterSession.Counters)
+        {
+            counter.Histogram.GetSummary().PrettyPrint(counter.Name);
+        }
+    }
+
+    public static void PerfSessionSorted()
+    {
+        if (!PerfEventCounterSession.TryGetNumberOfCounters(out uint fixedCounters, out uint programmableCounters))
+            Console.WriteLine("CPU PMU: unavailable");
+
+        Console.WriteLine($"CPU PMU: fixedCounters={fixedCounters}, programmableCounters={programmableCounters}");
+
+        var values = new byte[1000_000];
+        Random.Shared.NextBytes(values);
+
+        var counterSession = PerfEventCounterSession.Factory
+            .WithKernel(false)
+            .WithEnabled(true)
+            .WithHardwareCounter(PerfHardwareCounterId.CpuCycles)
+            .WithHardwareCounter(PerfHardwareCounterId.BranchMisses)
+            .Create();
+
+        var summaryUnsortedCycles = new HdrHistogramSummary();
+        var summaryUnsortedBranches = new HdrHistogramSummary();
+        double acc = 0;
+
+        for (int r = 0; r < 2; r++)
+        {
+            for (int i = 0; i < 1000; i++)
+            {
+                counterSession.Read(forceSyscallRead: true);
+
+                foreach (byte value in values)
+                {
+                    if (value >= 128)
+                        acc += 100;
+                    else
+                        acc *= 0.9999;
+                }
+
+                counterSession.Read(forceSyscallRead: true);
+
+                counterSession.Record(deltas: true);
+
+                if (i == 1000)
+                    counterSession.Reset();
+            }
+
+            if (r == 0)
+            {
+                counterSession.Counters.Hardware.CpuCycles!.Histogram.GetSummary(summaryUnsortedCycles);
+                counterSession.Counters.Hardware.BranchMisses!.Histogram.GetSummary(summaryUnsortedBranches);
+
+                counterSession.Reset();
+                Array.Sort(values);
+
+                if (acc < 0)
+                    throw new Exception("Do not optimize");
+                acc = 0;
+            }
+        }
+
+        var summarySortedCycles = counterSession.Counters.Hardware.CpuCycles!.Histogram.GetSummary();
+        var summarySortedBranches = counterSession.Counters.Hardware.BranchMisses!.Histogram.GetSummary();
+
+        summaryUnsortedCycles.PrettyPrintDiff(summarySortedCycles, "CpuCycles", "Unsorted", "Sorted");
+        summaryUnsortedBranches.PrettyPrintDiff(summarySortedBranches, "BranchMisses", "Unsorted", "Sorted");
+
+    }
+
     public static void PerfSessionSample()
     {
         var pinned = CpuUtils.PrepareBenchmarkThread(8);
@@ -30,7 +148,6 @@ public class PerfSessionSamples
                 // .WithHardwareCounters(PerfSwIds.CpuMigrations)
                 // .WithHardwareCounters(PerfSwIds.Dummy)
                 .Create();
-
 
         foreach (PerfEventCounter counter in perfSession.Counters)
         {
