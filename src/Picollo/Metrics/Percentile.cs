@@ -104,7 +104,7 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
                 switch (propName)
                 {
                     case PropRank: rank = reader.GetDouble(); break;
-                    case PropBucket: bucket = JsonSerializer.Deserialize<Bucket>(ref reader, options); break;
+                    case PropBucket: bucket = JsonSerializer.Deserialize(ref reader, Picollo.PicolloJsonContext.Default.Bucket); break;
                     case PropTargetCount: targetCount = reader.GetUInt64(); break;
                     case PropRunningCount: runningCount = reader.GetUInt64(); break;
                 }
@@ -118,7 +118,7 @@ public readonly record struct Percentile(double Rank, Bucket Bucket, ulong Targe
             writer.WriteStartObject();
             writer.WriteNumber(PropRank, value.Rank);
             writer.WritePropertyName(PropBucket);
-            JsonSerializer.Serialize(writer, value.Bucket, options);
+            JsonSerializer.Serialize(writer, value.Bucket, Picollo.PicolloJsonContext.Default.Bucket);
             writer.WriteNumber(PropTargetCount, value.TargetCount);
             writer.WriteNumber(PropRunningCount, value.RunningCount);
             writer.WriteEndObject();

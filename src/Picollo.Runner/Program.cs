@@ -15,7 +15,7 @@ internal class Program
         return;
         
         var runs = 10;
-        var threads = 2;
+        var threads = args.Length > 0 && int.TryParse(args[0], out int result) ? result : 2;
         
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, threadLocal: true);
         HdrHistogramBenches.PicolloConcurrentBench(runs, threads, false);

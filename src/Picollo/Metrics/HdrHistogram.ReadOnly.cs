@@ -5,7 +5,7 @@ namespace Picollo.Metrics;
 public abstract class ReadOnlyHdrHistogram
 {
     /// <summary>
-    /// The total number of observations that fell outside the [<see cref="MinTrackableValue"/>, <see cref="MaxTrackableValue"/>] range.
+    /// The total number of observations that fell outside the trackable range.
     /// </summary>
     public abstract ulong OverflowCount { get; }
 

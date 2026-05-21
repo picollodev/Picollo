@@ -330,7 +330,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
                     case PropMean: summary.Mean = reader.GetDouble(); break;
                     case PropStDev: summary.StDev = reader.GetDouble(); break;
                     case PropPercentiles:
-                        ReadPercentiles(ref reader, options, summary);
+                        ReadPercentiles(ref reader, summary);
                         break;
                     default:
                         reader.Skip();
@@ -341,7 +341,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
             return summary;
         }
 
-        private static void ReadPercentiles(ref Utf8JsonReader reader, JsonSerializerOptions options, HdrHistogramSummary summary)
+        private static void ReadPercentiles(ref Utf8JsonReader reader, HdrHistogramSummary summary)
         {
             var expectedRanks = SummaryRanks;
             int i = 0;
@@ -353,7 +353,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
                 if (i >= 16)
                     throw new JsonException($"Too many percentiles in array: expected exactly {expectedRanks.Length}.");
 
-                var percentile = JsonSerializer.Deserialize<Percentile>(ref reader, options);
+                var percentile = JsonSerializer.Deserialize(ref reader, Picollo.PicolloJsonContext.Default.Percentile);
                 double expectedRank = expectedRanks[i];
 
                 if (Math.Abs(percentile.Rank - expectedRank) > RankEpsilon)
@@ -380,7 +380,7 @@ public class HdrHistogramSummary : IEquatable<HdrHistogramSummary>
             writer.WritePropertyName(PropPercentiles);
             writer.WriteStartArray();
             foreach (ref readonly var percentile in value.Percentiles)
-                JsonSerializer.Serialize(writer, percentile, options);
+                JsonSerializer.Serialize(writer, percentile, Picollo.PicolloJsonContext.Default.Percentile);
             writer.WriteEndArray();
             writer.WriteEndObject();
         }
