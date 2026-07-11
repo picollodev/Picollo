@@ -191,7 +191,8 @@ internal sealed class ThreadLocalHdrHistogram<T> : HdrHistogram
 
                 histogram = new HdrHistogram<T>(acc.RelativeError, acc.MinTrackableValue, acc.MaxTrackableValue)
                 {
-                    OwnerThreadId = threadId
+                    OwnerThreadId = threadId,
+                    ResetCount = acc.ResetCount
                 };
 
                 children[idx] = histogram;

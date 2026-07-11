@@ -10,7 +10,7 @@ using Shouldly;
 namespace Picollo.Tests.Metrics;
 
 [TestFixture]
-public class HdrHistogramTests
+public class HdrHistogramInternalsTests
 {
     [TestCase(0.1)]
     [TestCase(0.01)]
