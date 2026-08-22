@@ -1,19 +1,21 @@
 <Solution>
   <Folder Name="/Sln/">
-    <Project Path="src/Picollo.Cli/Picollo.Cli.csproj" />
+    <Project Path="src/Picollo.Profiler/Picollo.Profiler.csproj" />
     <Project Path="src/Picollo/Picollo.csproj" />
   </Folder>
   <Folder Name="/Sln/Misc/">
     <File Path=".editorconfig" />
     <File Path=".github/workflows/ci.yml" />
+    <File Path=".github/workflows/profiler-linux.yml" />
+    <File Path=".github/workflows/profiler-windows.yml" />
     <File Path=".gitignore" />
+    <File Path="LICENSE.ThirdParty.txt" />
     <File Path="LICENSE.txt" />
     <File Path="Readme.md" />
     <File Path="src/Directory.Build.props" />
     <File Path="src/Directory.Build.targets" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="src/Picollo.Cli.Tests/Picollo.Cli.Tests.csproj" />
     <Project Path="src/Picollo.Runner/Picollo.Runner.csproj" />
     <Project Path="src/Picollo.Tests/Picollo.Tests.csproj" />
   </Folder>

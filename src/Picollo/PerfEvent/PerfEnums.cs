@@ -8,6 +8,7 @@ public enum PerfTypeId : uint
 {
     Hardware = 0,
     Software = 1,
+
     // Tracepoint = 2,
     HardwareCache = 3,
     Raw = 4,
@@ -20,51 +21,51 @@ public enum PerfHardwareCounterId : ulong
     /// Total cycles.  Be wary of what happens during CPU frequency scaling.
     /// </summary>
     CpuCycles = 0,
-    
+
     /// <summary>
     /// Retired instructions.  Be careful, these can be affected by various issues, most notably
     /// hardware interrupt counts.
     /// </summary>
     Instructions = 1,
-    
+
     /// <summary>
     /// Cache accesses.  Usually this indicates Last Level Cache accesses but this may vary
     /// depending on your CPU.  This may include prefetches and coherency messages; again, this
     /// depends on the design of your CPU.
     /// </summary>
     CacheReferences = 2,
-    
+
     /// <summary>
     /// Cache misses.  Usually this indicates Last Level Cache misses; this is intended to be used
     /// in conjunction with the <see cref="CacheReferences"/> event to calculate cache miss rates.
     /// </summary>
     CacheMisses = 3,
-    
+
     /// <summary>
     /// Retired branch instructions.
     /// </summary>
     BranchInstructions = 4,
-    
+
     /// <summary>
     /// Mispredicted branch instructions.
     /// </summary>
     BranchMisses = 5,
-    
+
     /// <summary>
     /// Bus cycles, which can be different from total cycles.
     /// </summary>
     BusCycles = 6,
-    
+
     /// <summary>
     /// Stalled cycles during issue.
     /// </summary>
-    StalledCyclesFrontend = 7, 
-    
+    StalledCyclesFrontend = 7,
+
     /// <summary>
     /// Stalled cycles during retirement.
     /// </summary>
-    StalledCyclesBackend = 8, 
-    
+    StalledCyclesBackend = 8,
+
     /// <summary>
     /// Total cycles; not affected by CPU frequency scaling.
     /// </summary>
@@ -77,71 +78,70 @@ public enum PerfSoftwareCounterId : ulong
     /// This reports the CPU clock, a high-resolution per-CPU timer.
     /// </summary>
     CpuClock = 0,
-    
+
     /// <summary>
     /// This reports a clock count specific to the task that is running.
     /// </summary>
     TaskClock = 1,
-    
+
     /// <summary>
     /// This reports the number of page faults.
     /// </summary>
     PageFaults = 2,
-    
+
     /// <summary>
     /// This counts context switches.  Until Linux  2.6.34, these were all reported as user-space
     /// events, after that they are reported as happening in the kernel.
     /// </summary>
     ContextSwitches = 3,
-    
+
     /// <summary>
     /// This reports the number of times the process has migrated to a new CPU.
     /// </summary>
     CpuMigrations = 4,
-    
+
     /// <summary>
     /// This counts the number of minor page faults. These did not require disk I/O to handle.
     /// </summary>
     PageFaultsMin = 5,
-    
+
     /// <summary>
     /// This counts the number of major page faults. These required disk I/O to handle.
     /// </summary>
     PageFaultsMaj = 6,
-    
+
     /// <summary>
     /// This counts the number of alignment faults. These happen when unaligned memory accesses
     /// happen; the kernel can handle these but it reduces performance.  This happens only on some
     /// architectures (never on x86).
     /// </summary>
     AlignmentFaults = 7,
-    
+
     /// <summary>
     /// This counts the number of emulation faults. The kernel sometimes traps on unimplemented
     /// instructions and emulates them for user space. This can negatively impact performance.
     /// </summary>
     EmulationFaults = 8,
-    
+
     /// <summary>
     /// This is a placeholder event that counts nothing.  Informational sample record types
     /// such as mmap or comm must be associated with an active event.  This dummy event allows
     /// gathering such records without requiring a counting event.
     /// </summary>
     Dummy = 9,
-    
+
     /// <summary>
     /// This is used to generate raw sample data from BPF.  BPF programs can write to this event
     /// using bpf_perf_event_output helper.
     /// </summary>
     BpfOutput = 10,
-    
+
     /// <summary>
     /// This counts context switches to a task in a different cgroup.  In other words, if the next
     /// task is in the same cgroup, it won't count the switch.
     /// </summary>
     CgroupSwitches = 11
 }
-
 
 internal enum PerfHwCacheId : ulong
 {
@@ -186,7 +186,6 @@ public enum PerfCacheCounterId : ulong
     LLWriteMiss = PerfHwCacheId.LL | (PerfHwCacheOpId.Write << 8) | (PerfHwCacheOpResultId.Miss << 16)
 }
 
-
 // perf_event_sample_format
 [Flags]
 internal enum PerfEventSampleFormat : ulong
@@ -226,7 +225,7 @@ internal enum PerfEventReadFormat : ulong
     PERF_FORMAT_ID = 1U << 2,
     PERF_FORMAT_GROUP = 1U << 3,
     PERF_FORMAT_LOST = 1U << 4,
-    PERF_FORMAT_MAX = 1U << 5,		/* non-ABI */
+    PERF_FORMAT_MAX = 1U << 5, /* non-ABI */
 }
 
 // perf_event_attr_flags
@@ -276,6 +275,11 @@ internal enum PerfEventAttrFlags : ulong
     BPFEvent = 1 << 30, // 5.1          /* include bpf events */
     AUXOutput = 1UL << 31, // 5.4       /* generate AUX records instead of events */
     CGroup = 1UL << 32, // 5.7          /* include cgroup events */
+    TextPoke = 1UL << 33, /* include text poke events */
+    BuildId = 1UL << 34, /* use build ID in mmap2 events */
+    InheritThread = 1UL << 35, /* children only inherit if cloned with CLONE_THREAD */
+    RemoveOnExec = 1UL << 36, /* event is removed from task on exec */
+    Sigtrap = 1UL << 37, /* send synchronous SIGTRAP on event */
 }
 
 [Flags]
@@ -340,4 +344,32 @@ internal enum ClockConstants
     Realtime = 0,
     Monotonic = 1,
     MonotonicRaw = 4,
+}
+
+// perf_event_type
+internal enum PerfEventType : uint
+{
+    PERF_RECORD_MMAP = 1,
+    PERF_RECORD_LOST = 2,
+    PERF_RECORD_COMM = 3,
+    PERF_RECORD_EXIT = 4,
+    PERF_RECORD_THROTTLE = 5,
+    PERF_RECORD_UNTHROTTLE = 6,
+    PERF_RECORD_FORK = 7,
+    PERF_RECORD_READ = 8,
+    PERF_RECORD_SAMPLE = 9,
+    PERF_RECORD_MMAP2 = 10,
+    PERF_RECORD_AUX = 11,
+    PERF_RECORD_ITRACE_START = 12,
+    PERF_RECORD_LOST_SAMPLES = 13,
+    PERF_RECORD_SWITCH = 14,
+    PERF_RECORD_SWITCH_CPU_WIDE = 15,
+    PERF_RECORD_NAMESPACES = 16,
+    PERF_RECORD_KSYMBOL = 17, // 5.1
+    PERF_RECORD_BPF_EVENT = 18, // 5.1
+    PERF_RECORD_CGROUP = 19, // 5.7
+    PERF_RECORD_TEXT_POKE = 20, // 5.9
+    PERF_RECORD_AUX_OUTPUT_HW_ID = 21,
+    PERF_RECORD_CALLCHAIN_DEFERRED = 22,
+    PERF_RECORD_MAX,
 }

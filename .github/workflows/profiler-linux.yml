@@ -1,0 +1,46 @@
+name: Profiler Linux
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write # Mandatory for Trusted Publishing (OIDC)
+  contents: read
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_VERSION: 0.0.0-local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "PACKAGE_VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Build
+        run: dotnet publish src/Picollo.Profiler/Picollo.Profiler.csproj -c Release -r linux-x64 --self-contained true -p:PublishAot=true -p:TrimMode=full -p:PackageVersion=$PACKAGE_VERSION
+
+      # No standalone profiler tests yet.
+
+      - name: Pack
+        run: dotnet pack src/Picollo.Profiler/Picollo.Profiler.csproj -c Release --no-build -r linux-x64 -o ./artifacts -p:PackageVersion=$PACKAGE_VERSION
+
+      - name: Publish to NuGet
+        if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'picollodev/picollo'
+        run: |
+          dotnet nuget push "./artifacts/*.nupkg" --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}

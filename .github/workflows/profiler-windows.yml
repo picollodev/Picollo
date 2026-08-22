@@ -1,0 +1,48 @@
+name: Profiler Windows
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  id-token: write # Mandatory for Trusted Publishing (OIDC)
+  contents: read
+
+jobs:
+  build-test-publish:
+    runs-on: windows-latest
+    env:
+      PACKAGE_VERSION: 0.0.0-local
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: '"PACKAGE_VERSION=$($env:GITHUB_REF_NAME.Substring(1))" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
+
+      - name: Build
+        run: dotnet publish src/Picollo.Profiler/Picollo.Profiler.csproj -c Release -r win-x64 --self-contained true -p:PublishAot=true -p:TrimMode=full -p:PackageVersion=$env:PACKAGE_VERSION
+
+      # No standalone profiler tests yet.
+
+      - name: Pack
+        shell: pwsh
+        run: dotnet pack src/Picollo.Profiler/Picollo.Profiler.csproj -c Release --no-build -r win-x64 -o ./artifacts -p:PackageVersion=$env:PACKAGE_VERSION
+
+      - name: Publish to NuGet
+        if: startsWith(github.ref, 'refs/tags/v') && github.repository == 'picollodev/picollo'
+        shell: pwsh
+        run: Get-ChildItem ./artifacts/*.nupkg | ForEach-Object { dotnet nuget push $_.FullName --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} }

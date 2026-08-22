@@ -9,10 +9,22 @@ internal class Program
     public static void Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
-        Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
+        // Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.High;
+
+        PipelinesSamples.Payload = 1;
+        // PipelinesSamples.SyncPipelinesTest();
+        // PipelinesSamples.FramedSocketTest();
+        
+        
+        // PoolSamples.NativeAllocFree();
+        
+        
+        ProfilerTests.AttachProfilerSample();
+        return;
         
         PerfSessionSamples.PerfSessionSorted();
         return;
+        
         
         var runs = 10;
         var threads = args.Length > 0 && int.TryParse(args[0], out int result) ? result : 2;
@@ -33,7 +45,8 @@ internal class Program
         HdrHistogramSamples.GettingStartedClockResolution();
         return;
 
-
+        
+        
         if (!PerfEventCounterSession.IsSupported)
         {
             Console.WriteLine($"{nameof(PerfEventCounterSession)} is not supported on this machine.");

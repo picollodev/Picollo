@@ -21,5 +21,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)..\Picollo.png" Pack="true" PackagePath="\" Visible="false"/>
+    <None Include="$(MSBuildThisFileDirectory)..\LICENSE.txt" Pack="true" PackagePath="\" Visible="false"/>
+    <None Include="$(MSBuildThisFileDirectory)..\LICENSE.ThirdParty.txt" Pack="true" PackagePath="\" Visible="false"/>
   </ItemGroup>
 </Project>

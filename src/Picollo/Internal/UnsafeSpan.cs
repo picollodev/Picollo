@@ -29,7 +29,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     private readonly nint _byteOffset;
     private readonly nint _itemCount;
 
-    public UnsafeSpan(object owner, nint byteOffset, nint itemCount)
+    private UnsafeSpan(object owner, nint byteOffset, nint itemCount)
     {
         _owner = owner;
         _byteOffset = byteOffset;
@@ -69,7 +69,7 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     public nint ByteLength => _itemCount * Unsafe.SizeOf<T>();
 
     internal T[]? OwnerArray => _owner as T[];
-    
+
     public ref T DataReference
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -148,6 +148,8 @@ internal readonly unsafe struct UnsafeSpan<T> : IReadOnlyList<T>
     }
 
     public Span<T> AsSpan() => MemoryMarshal.CreateSpan(ref DataReference, (int)_itemCount);
+    
+    public Memory<T> AsMemory() => new(OwnerArray, (int)(_byteOffset / Unsafe.SizeOf<T>()), (int)_itemCount);
 
     T IReadOnlyList<T>.this[int index] => this[index];
 

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace Picollo.PerfEvent;
@@ -18,6 +19,35 @@ public partial class PerfEventCounterSession
         return IsSupported &&
                NativeMethods.TryReadCpuPmuInfo(out _, out programmableCounters, out _, out _,
                    out _, out fixedCounters, out _);
+    }
+
+    public static bool IsCounterSupported(PerfHardwareCounterId counterId) =>
+        IsCounterSupported(PerfTypeId.Hardware, (ulong) counterId);
+
+    public static bool IsCounterSupported(PerfCacheCounterId counterId) =>
+        IsCounterSupported(PerfTypeId.HardwareCache, (ulong) counterId);
+
+    private static bool IsCounterSupported(PerfTypeId type, ulong config)
+    {
+        if (!IsSupported)
+            return false;
+
+        var fd = -1;
+        try
+        {
+            var attr = NativeMethods.CreateAttr(type, config, pinned: false, disabled: true, excludeKernel: true);
+            fd = NativeMethods.PerfEventOpen(in attr, pid: 0, cpu: -1, groupFd: -1, flags: 0);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (fd >= 0)
+                _ = NativeMethods.close(fd);
+        }
     }
 
 

@@ -59,9 +59,9 @@ public readonly struct Buckets : IEnumerable<Bucket>
 
         public void Reset() => _current = default;
 
-        public Bucket Current => _current;
+        public readonly Bucket Current => _current;
 
-        object? IEnumerator.Current => _current;
+        readonly object? IEnumerator.Current => _current;
 
         public void Dispose()
         {
@@ -126,9 +126,9 @@ public readonly struct BucketPercentiles : IEnumerable<Percentile>
             _current = default;
         }
 
-        public Percentile Current => _current;
+        public readonly Percentile Current => _current;
 
-        object? IEnumerator.Current => _current;
+        readonly object? IEnumerator.Current => _current;
 
         public void Dispose() => _buckets.Dispose();
     }

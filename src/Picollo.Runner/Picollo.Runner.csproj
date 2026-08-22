@@ -4,17 +4,50 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsPackable>false</IsPackable>
     <TieredCompilation>true</TieredCompilation>
     <TieredPGO>true</TieredPGO>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' AND $([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows)))">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' AND $([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))">linux-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Picollo\Picollo.csproj"/>
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="HdrHistogram" Version="2.5.0"/>
+  <Target Name="PublishProfiler" BeforeTargets="PrepareForBuild">
+    <Exec Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Windows))) AND !Exists('$(MSBuildProjectDirectory)\..\Picollo.Profiler\bin\Release\$(TargetFramework)\$(RuntimeIdentifier)\publish\Picollo.Profiler.dll')"
+          Command="&quot;$(MSBuildProjectDirectory)\..\Picollo.Profiler\publish.cmd&quot;" />
+    <Exec Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux))) AND !Exists('$(MSBuildProjectDirectory)/../Picollo.Profiler/bin/Release/$(TargetFramework)/$(RuntimeIdentifier)/publish/Picollo.Profiler.so')"
+          Command="bash &quot;$(MSBuildProjectDirectory)/../Picollo.Profiler/publish.sh&quot;" />
+  </Target>
+
+  <ItemGroup Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">
+    <Content Include="..\Picollo.Profiler\bin\Release\$(TargetFramework)\$(RuntimeIdentifier)\publish\Picollo.Profiler.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Picollo.Profiler.dll</Link>
+    </Content>
+    <Content Include="..\Picollo.Profiler\bin\Release\$(TargetFramework)\$(RuntimeIdentifier)\publish\Picollo.Profiler.pdb">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Picollo.Profiler.pdb</Link>
+    </Content>
   </ItemGroup>
 
+  <ItemGroup Condition="$([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('linux-'))">
+    <Content Include="..\Picollo.Profiler\bin\Release\$(TargetFramework)\$(RuntimeIdentifier)\publish\Picollo.Profiler.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Picollo.Profiler.so</Link>
+    </Content>
+    <Content Include="..\Picollo.Profiler\bin\Release\$(TargetFramework)\$(RuntimeIdentifier)\publish\Picollo.Profiler.so.dbg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Picollo.Profiler.so.dbg</Link>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="HdrHistogram" Version="2.5.0"/>
+    <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.661903"/>
+  </ItemGroup>
+  
 </Project>

@@ -7,12 +7,12 @@ using System.Runtime.InteropServices;
 
 namespace Picollo.PerfEvent;
 
-internal static class NativeMethods
+internal static partial class NativeMethods
 {
     private const string NativeLibrary = "picollo_native";
 
-    [DllImport(NativeLibrary, EntryPoint = "is_available")]
-    private static extern nuint IsNativeAvailable();
+    [LibraryImport(NativeLibrary, EntryPoint = "is_available")]
+    private static partial nuint IsNativeAvailable();
 
     public static bool IsSupported()
     {
@@ -67,13 +67,14 @@ internal static class NativeMethods
             Architecture.X86 => 336,
             Architecture.Arm64 => 241,
             Architecture.Arm => 364,
-            _ => throw new PlatformNotSupportedException($"perf_event_open syscall number is unknown for architecture {RuntimeInformation.ProcessArchitecture}.")
+            _ => throw new PlatformNotSupportedException(
+                $"perf_event_open syscall number is unknown for architecture {RuntimeInformation.ProcessArchitecture}.")
         };
 
         var fd = SysCallPerfEventOpen(perfEventOpenSyscallNumber, in attr, pid, cpu, groupFd, flags);
 
         if (fd < 0)
-            ThrowLastPInvokeError($"perf_event_open failed");
+            ThrowLastPInvokeError("perf_event_open failed");
 
         return checked((int)fd);
     }
@@ -115,24 +116,28 @@ internal static class NativeMethods
     private const ulong PerfEventIocDisable = 0x2401;
     private const ulong PerfEventIocReset = 0x2403;
 
-    public static void ResetGroup(int fd)
-    {
-        IoctlGroup(fd, PerfEventIocReset, PerfIocFlagGroup);
-    }
+    public static void ResetGroup(int fd) => IoctlGroup(fd, PerfEventIocReset, PerfIocFlagGroup);
 
-    public static void EnableGroup(int fd)
-    {
-        IoctlGroup(fd, PerfEventIocEnable, PerfIocFlagGroup);
-    }
+    public static void EnableGroup(int fd) => IoctlGroup(fd, PerfEventIocEnable, PerfIocFlagGroup);
 
-    public static void DisableGroup(int fd)
-    {
-        IoctlGroup(fd, PerfEventIocDisable, PerfIocFlagGroup);
-    }
+    public static void DisableGroup(int fd) => IoctlGroup(fd, PerfEventIocDisable, PerfIocFlagGroup);
+
+    public static void ResetEvent(int fd) => IoctlEvent(fd, PerfEventIocReset);
+
+    public static void EnableEvent(int fd) => IoctlEvent(fd, PerfEventIocEnable);
+
+    public static void DisableEvent(int fd) => IoctlEvent(fd, PerfEventIocDisable);
 
     private static void IoctlGroup(int fd, ulong request, nuint arg)
     {
         int rc = ioctl(fd, request, arg);
+        if (rc != 0)
+            ThrowLastPInvokeError($"ioctl(0x{request:X}) failed for fd={fd}");
+    }
+
+    private static void IoctlEvent(int fd, ulong request)
+    {
+        int rc = ioctl(fd, request, 0);
         if (rc != 0)
             ThrowLastPInvokeError($"ioctl(0x{request:X}) failed for fd={fd}");
     }
