@@ -14,8 +14,6 @@ namespace Picollo.Profiling.Messages;
 [JsonSerializable(typeof(CloseFrameEvent))]
 [JsonSerializable(typeof(SessionConfiguration))]
 [JsonSerializable(typeof(ProfilerConfiguration))]
-[JsonSerializable(typeof(PingMessage))]
-[JsonSerializable(typeof(PongMessage))]
 [JsonSerializable(typeof(StartMessage))]
 [JsonSerializable(typeof(StopMessage))]
 [JsonSerializable(typeof(DetachMessage))]
@@ -23,7 +21,7 @@ namespace Picollo.Profiling.Messages;
 [JsonSerializable(typeof(OnAttachedMessage))]
 [JsonSerializable(typeof(CallCountersMessage))]
 [JsonSerializable(typeof(CallCounters))]
-[JsonSerializable(typeof(Threadounters))]
+[JsonSerializable(typeof(ThreadCounters))]
 [JsonSerializable(typeof(FrameCounters))]
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Default)]
 internal partial class MessagesJsonContext : JsonSerializerContext

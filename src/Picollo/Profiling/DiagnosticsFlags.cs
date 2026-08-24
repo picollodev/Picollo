@@ -24,8 +24,6 @@ public enum DiagnosticsFlags : long
     /// </summary>
     WithFile = 1L << 3,
 
-    WithPingPong = 1L << 4,
-    
     /// <summary>
     /// Append /proc/pid/maps snapshots to a file in the log output dir
     /// </summary>
@@ -41,5 +39,5 @@ public enum DiagnosticsFlags : long
     WithManagedModulesDump = 1L << 8,
     WithManagedMethodsDump = 1L << 9,
 
-    Default = WithFile
+    Default = WithInfo
 }

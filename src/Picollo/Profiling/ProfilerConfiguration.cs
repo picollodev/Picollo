@@ -54,7 +54,7 @@ public class ProfilerConfiguration
     [JsonPropertyName("diagnostics_flags")]
     public DiagnosticsFlags DiagnosticsFlags { get; set; } = DiagnosticsFlags.Default;
     
-    [JsonPropertyName("os_thread_id_filer")]
+    [JsonPropertyName("os_thread_id_filter")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public uint[]? OsThreadIdFilter { get; set; }
 

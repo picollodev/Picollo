@@ -34,6 +34,7 @@ internal class Profiler : IStartStop
     private readonly INativeIpSampler _sampler;
     private Thread? _samplerThread;
     private readonly SampleCollector _sampleCollector;
+    private readonly Action<Exception> _onFailure;
 
     private volatile bool _hasNewState;
 
@@ -46,8 +47,8 @@ internal class Profiler : IStartStop
                 return;
 
             Log.LogDebug($"Profiler state change requested: {field:G} -> {value:G}");
-            _hasNewState = true;
             Volatile.Write(ref Unsafe.As<ProfilerState, int>(ref field), (int)value);
+            _hasNewState = true;
         }
     }
 
@@ -62,13 +63,16 @@ internal class Profiler : IStartStop
                 return;
 
             Log.LogDebug($"Profiler chunk name change requested: '{field}' -> '{value}'");
-            _hasNewName = true;
             Volatile.Write(ref field, value);
+            _hasNewName = true;
         }
     }
 
-    public Profiler(CorProfiler corProfiler, Action<InputChunk>? chunkPublisher, Action<CallCountersMessage>? callCountersPublisher)
+    public Profiler(CorProfiler corProfiler, Action<InputChunk>? chunkPublisher, Action<CallCountersMessage>? callCountersPublisher,
+        Action<Exception> onFailure)
     {
+        ArgumentNullException.ThrowIfNull(onFailure);
+
         Id = Interlocked.Increment(ref s_profilerIdSource);
 
         _corProfiler = corProfiler;
@@ -92,6 +96,7 @@ internal class Profiler : IStartStop
 
         _sampler = sampler;
         _sampleCollector = new SampleCollector(_corProfiler.ResolveMethod, chunkPublisher, callCountersPublisher);
+        _onFailure = onFailure;
         Log.LogDebug($"Profiler created with sampler {_sampler.GetType().Name}");
     }
 
@@ -101,9 +106,10 @@ internal class Profiler : IStartStop
     public void Start(CancellationToken cancellationToken)
     {
         Log.LogDebug($"Starting profiler with requested state {State:G}");
-        _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _cts = cts;
 
-        _samplerThread = new Thread(() =>
+        ThreadStart samplerBody = () =>
         {
             Log.LogDebug("Sampler thread entered");
             _corProfiler.ICorProfilerInfo15.InitializeCurrentThread().ThrowIfFailed();
@@ -131,7 +137,7 @@ internal class Profiler : IStartStop
                 }
             }
 
-            _sampler.Start(_cts.Token);
+            _sampler.Start(cts.Token);
             Log.LogDebug("Native sampler started");
 
             try
@@ -146,7 +152,7 @@ internal class Profiler : IStartStop
                 var state = State;
 
                 // TODO Add ReadFrame methods on FramedReader that return ReadResult with a full frame only, with timeout and cancellation.
-                foreach (var frame in _sampler.Output.ConsumeFrames(_cts.Token))
+                foreach (var frame in _sampler.Output.ConsumeFrames(cts.Token))
                 {
                     ProcessThreads();
 
@@ -232,9 +238,12 @@ internal class Profiler : IStartStop
                         deadline = Environment.TickCount64 + chunkPublishMaxDelaySecond * 1000;
                     }
                 }
+
+                if (!cts.IsCancellationRequested)
+                    throw new InvalidOperationException("Native sampler output completed unexpectedly.");
             }
-            catch (OperationCanceledException) { }
-            catch (ObjectDisposedException) { }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested) { }
+            catch (ObjectDisposedException) when (cts.IsCancellationRequested) { }
             finally
             {
                 Log.LogDebug("Sampler loop exited; clearing profiler event masks");
@@ -294,6 +303,41 @@ internal class Profiler : IStartStop
                             threadInfo.SumbittedTo = Id;
                         }
                     }
+                }
+            }
+        };
+
+        _samplerThread = new Thread(() =>
+        {
+            try
+            {
+                samplerBody();
+            }
+            catch (Exception ex)
+            {
+                Log.LogCritical(ex, "Profiler sampler thread failed");
+
+                try
+                {
+                    var clearResult = _corProfiler.ICorProfilerInfo5.SetEventMask2(COR_PRF_MONITOR.COR_PRF_MONITOR_NONE,
+                        COR_PRF_HIGH_MONITOR.COR_PRF_HIGH_MONITOR_NONE);
+                    if (!clearResult.IsOK)
+                        Log.LogError($"Call to clear {nameof(ICorProfilerInfo5.SetEventMask2)} after failure returned {clearResult}");
+                }
+                catch (Exception clearException)
+                {
+                    Log.LogError(clearException, "Cannot clear profiler event masks after sampler failure");
+                }
+
+                _threads.Reset();
+
+                try
+                {
+                    _onFailure(ex);
+                }
+                catch (Exception disconnectException)
+                {
+                    Log.LogError(disconnectException, "Cannot disconnect failed profiler session");
                 }
             }
         })

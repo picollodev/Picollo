@@ -56,12 +56,29 @@ internal sealed class EtwSampler : NativeSamplerBase
 
         _processorThread = new Thread(() =>
         {
+            Exception? exception = null;
             try
             {
                 session.Source.Process();
             }
             catch (OperationCanceledException) { }
             catch (ObjectDisposedException) { }
+            catch (Exception ex)
+            {
+                exception = ex;
+                Log.LogError(ex, "ETW processing failed");
+            }
+            finally
+            {
+                try
+                {
+                    _outputWriter.Complete(exception);
+                }
+                catch (Exception ex)
+                {
+                    Log.LogError(ex, "Cannot complete ETW sampler output");
+                }
+            }
         })
         {
             IsBackground = true,

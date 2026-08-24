@@ -1,6 +1,7 @@
 ﻿// Logger.cs
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading;
@@ -14,17 +15,28 @@ namespace Picollo.Profiler;
 public static class Logger
 {
     private static readonly MutableFilterOptions Filter = new(LogLevel.Information);
+    private static readonly Lock FactoryLock = new();
+    private static readonly List<ForwardingLogger> Loggers = [];
 
-    private static readonly LoggerFactory s_factory = new([], Filter);
+    private static volatile ILoggerFactory _factory = new LoggerFactory([], Filter);
 
-    public static ILogger ForType<T>() => Factory.CreateLogger<T>();
-    public static ILogger ForType(Type type) => Factory.CreateLogger(type);
+    public static ILogger ForType<T>() => ForType(typeof(T));
+    public static ILogger ForType(Type type)
+    {
+        string categoryName = type.FullName ?? type.Name;
+        lock (FactoryLock)
+        {
+            var logger = new ForwardingLogger(categoryName, _factory.CreateLogger(categoryName));
+            Loggers.Add(logger);
+            return logger;
+        }
+    }
 
-    public static ILoggerFactory Factory => s_factory;
+    public static ILoggerFactory Factory => _factory;
 
     public static void SetLevel(LogLevel level) => Filter.SetLevel(level);
 
-    public static void AddConsole()
+    private static void AddConsole(ILoggerFactory factory)
     {
         Console.OutputEncoding = new UTF8Encoding(false);
 
@@ -36,10 +48,10 @@ public static class Logger
 
         ConfigureColoredConsoleFormat(options);
 
-        s_factory.AddProvider(new ZLoggerConsoleLoggerProvider(options));
+        factory.AddProvider(new ZLoggerConsoleLoggerProvider(options));
     }
 
-    public static void AddFile(string sessionDir)
+    private static void AddFile(ILoggerFactory factory, string sessionDir)
     {
         var path = Path.Combine(sessionDir, "profiler.log");
 
@@ -52,28 +64,74 @@ public static class Logger
 
         ConfigurePlainFormat(options);
 
-        s_factory.AddProvider(new ZLoggerFileLoggerProvider(path, options));
+        factory.AddProvider(new ZLoggerFileLoggerProvider(path, options));
     }
 
     public static void ConfigureSession(string? sessionDir, bool console, LogLevel level = LogLevel.Debug)
     {
+        ILoggerFactory? nextFactory = null;
         try
         {
             SetLevel(level);
+            nextFactory = new LoggerFactory([], Filter);
 
             if (!string.IsNullOrWhiteSpace(sessionDir))
-                AddFile(sessionDir);
+                AddFile(nextFactory, sessionDir);
             
             if (console)
-                AddConsole();
+                AddConsole(nextFactory);
+
+            ILoggerFactory previousFactory;
+            lock (FactoryLock)
+            {
+                previousFactory = _factory;
+                _factory = nextFactory;
+                foreach (ForwardingLogger logger in Loggers)
+                    logger.SetFactory(nextFactory);
+
+                nextFactory = null;
+            }
+
+            previousFactory.Dispose();
         }
         catch (Exception ex)
         {
+            nextFactory?.Dispose();
             Console.WriteLine($"{ex.Message}\n{ex.StackTrace}");
         }
     }
 
-    public static void Shutdown() => s_factory.Dispose();
+    public static void Shutdown()
+    {
+        var emptyFactory = new LoggerFactory([], Filter);
+        ILoggerFactory sessionFactory;
+        lock (FactoryLock)
+        {
+            sessionFactory = _factory;
+            _factory = emptyFactory;
+            foreach (ForwardingLogger logger in Loggers)
+                logger.SetFactory(emptyFactory);
+        }
+
+        sessionFactory.Dispose();
+    }
+
+    private sealed class ForwardingLogger(string categoryName, ILogger logger) : ILogger
+    {
+        private volatile ILogger _logger = logger;
+
+        public void SetFactory(ILoggerFactory factory) =>
+            _logger = factory.CreateLogger(categoryName);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull =>
+            _logger.BeginScope(state);
+
+        public bool IsEnabled(LogLevel logLevel) => _logger.IsEnabled(logLevel);
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            _logger.Log(logLevel, eventId, state, exception, formatter);
+    }
 
     private static void ConfigurePlainFormat(ZLoggerOptions options)
     {
@@ -117,7 +175,7 @@ public static class Logger
 
     private sealed class MutableFilterOptions : IOptionsMonitor<LoggerFilterOptions>
     {
-        private LoggerFilterOptions _current;
+        private volatile LoggerFilterOptions _current;
         private event Action<LoggerFilterOptions, string?>? Changed;
 
         public MutableFilterOptions(LogLevel level)
@@ -128,7 +186,7 @@ public static class Logger
             };
         }
 
-        public LoggerFilterOptions CurrentValue => Volatile.Read(ref _current);
+        public LoggerFilterOptions CurrentValue => _current;
 
         public LoggerFilterOptions Get(string? name) => CurrentValue;
 
@@ -145,7 +203,7 @@ public static class Logger
             {
                 MinLevel = level
             };
-            Volatile.Write(ref _current, next);
+            _current = next;
             Changed?.Invoke(next, null);
         }
 

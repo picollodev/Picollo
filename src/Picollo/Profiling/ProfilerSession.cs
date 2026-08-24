@@ -56,7 +56,6 @@ public sealed class ProfilerSession : IDisposable
     internal event Action<SessionConfiguration>? OnConfigurationReceived;
     internal event Action<ReadOnlySequence<byte>>? OnInputChunkPayloadReceived;
     internal event Action<ReadOnlySequence<byte>>? OnHotMethodsPayloadReceived;
-    internal event Action<PongMessage>? OnPongReceived;
     internal event Action<StartMessage>? OnStartReceived;
     internal event Action<StopMessage>? OnStopReceived;
     internal event Action<DetachMessage>? OnDetachReceived;
@@ -73,7 +72,7 @@ public sealed class ProfilerSession : IDisposable
         try
         {
             await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), cancellationToken).ConfigureAwait(false);
-            return new ProfilerSession(isClient: true, socket, cancellationToken);
+            return new ProfilerSession(isClient: true, socket);
         }
         catch
         {
@@ -95,7 +94,7 @@ public sealed class ProfilerSession : IDisposable
         try
         {
             socket.Connect(new UnixDomainSocketEndPoint(socketPath));
-            return new ProfilerSession(isClient: true, socket, cancellationToken);
+            return new ProfilerSession(isClient: true, socket);
         }
         catch (Exception ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -174,10 +173,6 @@ public sealed class ProfilerSession : IDisposable
         }
     }
 
-    private void SendPing() => SendMessage(new PingMessage());
-
-    private void SendPong() => SendMessage(new PongMessage());
-
     internal void SendConfiguration(SessionConfiguration configuration) => SendMessage(configuration);
     
     public void SendStart(string? segmentName) => SendMessage(new StartMessage {SegmentName = segmentName});
@@ -204,20 +199,6 @@ public sealed class ProfilerSession : IDisposable
 
     internal void SendCallCounters(CallCountersMessage message) => SendMessage(message);
 
-    internal async Task SendPingMessages()
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
-
-        try
-        {
-            while (await timer.WaitForNextTickAsync(_cts.Token))
-                SendPing();
-        }
-        catch (OperationCanceledException) when (_cts.Token.IsCancellationRequested)
-        {
-        }
-    }
-
     internal async Task ProcessSessionAsync()
     {
         Exception? exception = null;
@@ -241,23 +222,47 @@ public sealed class ProfilerSession : IDisposable
         }
         finally
         {
-            if (_isClient)
-                OnDetachedReceived?.Invoke(new OnDetachedMessage());
+            try
+            {
+                if (_isClient)
+                    OnDetachedReceived?.Invoke(new OnDetachedMessage());
+            }
+            catch (Exception ex)
+            {
+                exception ??= ex;
+            }
 
-            DoDispose();
+            try
+            {
+                DoDispose();
+            }
+            catch (Exception ex)
+            {
+                exception ??= ex;
+            }
 
             if (!_isClient)
             {
-                var activeSession = Interlocked.Exchange(ref ActiveSession, null);
+                var activeSession = Interlocked.CompareExchange(ref ActiveSession, null, this);
 
-                if (activeSession is not null)
+                if (ReferenceEquals(activeSession, this))
                 {
-                    OnSessionDisconnected?.Invoke(activeSession);
-                    if (!ReferenceEquals(activeSession, this)) throw new InvalidOperationException("Unexpected session instance");
+                    try
+                    {
+                        OnSessionDisconnected?.Invoke(this);
+                    }
+                    catch (Exception ex)
+                    {
+                        exception ??= ex;
+                    }
+                }
+                else if (activeSession is not null)
+                {
+                    exception ??= new InvalidOperationException("Unexpected session instance");
                 }
             }
 
-            if(exception is null)
+            if (exception is null)
                 _completedTcs.SetResult();
             else
                 _completedTcs.SetException(exception);
@@ -288,14 +293,6 @@ public sealed class ProfilerSession : IDisposable
                 break;
             case ClientMessageType.CallCounters:
                 OnHotMethodsPayloadReceived?.Invoke(payload);
-                break;
-            case ClientMessageType.Ping:
-                _ = ReadMessage<PingMessage>(in payload);
-                if (!_isClient)
-                    SendPong();
-                break;
-            case ClientMessageType.Pong:
-                OnPongReceived?.Invoke(ReadMessage<PongMessage>(in payload));
                 break;
             case ClientMessageType.Start:
                 OnStartReceived?.Invoke(ReadMessage<StartMessage>(in payload));

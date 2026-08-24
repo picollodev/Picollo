@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Immutable;
 using System.Threading;
+using Picollo.Profiling.Messages;
 
 namespace Picollo.Profiler.IpResolution;
 
@@ -96,7 +97,9 @@ public class UnknownModule : ResolvedModule
     public static readonly UnknownModule Module = new();
 
     public static readonly ManagedResolvedMethod ManagedPlaceholder =
-        new(default, default, Module, "unknown_managed", "unknown_managed", null, new ImmutableArray<string>(), Module.IpRangeSet.Ranges);
+        new(default, default, Module, "unknown_managed", "unknown_managed", null, new ImmutableArray<string>(),
+            new MethodMetadata(new TypeMetadata("", "unknown_managed"), "unknown_managed", null, ImmutableArray<ParameterMetadata>.Empty),
+            Module.IpRangeSet.Ranges);
 
     public static readonly ResolvedNativeMethod NativePlaceholder = new(Module, "unknown_native", Module.ModuleRange);
 

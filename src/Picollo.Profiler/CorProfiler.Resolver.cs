@@ -4,8 +4,11 @@ using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
 using Microsoft.Extensions.Logging;
 using Picollo.Profiler.IpResolution;
+using Picollo.Profiling.Messages;
 using Silhouette;
 
 namespace Picollo.Profiler;
@@ -46,6 +49,9 @@ public partial class CorProfiler
 
             FunctionId functionId = functionFromIp.FunctionId;
 
+            // TODO GetFunctionInfo can fail for metadata-less managed functions such as LCG methods and IL stubs.
+            // Check IsFunctionDynamic first and use GetDynamicFunctionInfo before requiring metadata; once
+            // GetFunctionFromIP3 succeeds, later resolution failures must remain unknown-managed, not native.
             (res, FunctionInfo functionInfo) = ICorProfilerInfo2.GetFunctionInfo(functionId);
             if (!res.IsOK)
                 return true;
@@ -130,8 +136,11 @@ public partial class CorProfiler
                 // signature = dynamicFunctionInfoWithName.Signature;
                 // moduleInfo = ICorProfilerInfo3.GetModuleInfo2(dynamicFunctionInfoWithName.ModuleId).ThrowIfFailed();
 
-                managedMethod = new ManagedResolvedMethod(functionId, functionInfo, module, functionInfo.ModuleId.ToString(), dynamicFunctionInfoWithName.Name,
-                    null, ImmutableArray<string>.Empty, ipRanges);
+                var typeName = functionInfo.ModuleId.ToString();
+                var methodName = dynamicFunctionInfoWithName.Name;
+                var metadata = CreateFallbackMethodMetadata(typeName, methodName);
+                managedMethod = new ManagedResolvedMethod(functionId, functionInfo, module, typeName, methodName,
+                    null, ImmutableArray<string>.Empty, metadata, ipRanges);
 
                 // Console.WriteLine($"Resolved dynamic method: {managedMethod} with {ipRanges[0]}");
                 // Console.WriteLine($"DYNAMIC: name {methodName}, {moduleInfo.ModuleName}, {functionInfo.ModuleId}, {dynamicFunctionInfoWithName.ModuleId}, {moduleInfo.BaseLoadAddress}, {ipRanges.Count}, {ipRanges[0]}");
@@ -153,6 +162,7 @@ public partial class CorProfiler
                 var isDllImportPinvoke = (methodProps.Attributes & (uint)MethodAttributes.PinvokeImpl) != 0;
                 var isInternalCall = (methodProps.ImplementationFlags & (uint)MethodImplAttributes.InternalCall) != 0;
                 bool isLibraryImport = false, isDllImportAttribute = false;
+                var metadata = CreateFallbackMethodMetadata(typeName, methodName);
 
                 if (module.TypeProvider is not null)
                 {
@@ -173,8 +183,26 @@ public partial class CorProfiler
                     }
                 }
 
+                if (module.SignatureTypeProvider is not null)
+                {
+                    try
+                    {
+                        var handle = MetadataTokens.EntityHandle(functionInfo.Token.Value);
+                        if (handle.Kind != HandleKind.MethodDefinition)
+                            throw new NotSupportedException($"Expected MethodDef token, got {handle.Kind}");
+
+                        metadata = module.SignatureTypeProvider.GetMethodMetadata(
+                            (MethodDefinitionHandle)handle,
+                            methodProps.Signature);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.LogWarning(ex, $"Cannot create managed method metadata: {typeName}.{methodName}");
+                    }
+                }
+
                 managedMethod = new ManagedResolvedMethod(functionId, functionInfo, module, typeName, methodName, returnType,
-                    parameterTypes, ipRanges)
+                    parameterTypes, metadata, ipRanges)
                 {
                     IsDllImportPinvoke = isDllImportPinvoke,
                     IsLibraryImport = isLibraryImport,
@@ -196,6 +224,19 @@ public partial class CorProfiler
             Log.LogError(ex, $"TryResolveManagedMethod threw an unexpected exception");
             return false;
         }
+    }
+
+    private static MethodMetadata CreateFallbackMethodMetadata(string typeName, string methodName)
+    {
+        var separator = typeName.LastIndexOf('.');
+        var typeNamespace = separator < 0 ? "" : typeName[..separator];
+        var name = separator < 0 ? typeName : typeName[(separator + 1)..];
+
+        return new MethodMetadata(
+            new TypeMetadata(typeNamespace, name),
+            methodName,
+            null,
+            ImmutableArray<ParameterMetadata>.Empty);
     }
 
     private ReadOnlySpan<IpRange> GetIpRanges(FunctionId functionId, ReJITId reJitId, ulong ip)

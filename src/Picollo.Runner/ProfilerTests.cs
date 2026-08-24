@@ -25,7 +25,7 @@ public static class ProfilerTests
         
         var profilerSession = ProfilerClient
             .AttachProfiler(onAttachState: ProfilerState.DryRun, sessionName: "Sample attach", threadNameFilter: ["picollo"],
-                diagnosticsFlags: DiagnosticsFlags.WithPingPong | DiagnosticsFlags.WithDebug | DiagnosticsFlags.WithConsole | DiagnosticsFlags.WithFile);
+                diagnosticsFlags: DiagnosticsFlags.WithDebug | DiagnosticsFlags.WithConsole | DiagnosticsFlags.WithFile);
 
         var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
 

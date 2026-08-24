@@ -47,7 +47,7 @@ public static class ProfilerClient
         var profilerConfiguration = new ProfilerConfiguration
         {
             OnAttachState = onAttachState,
-            SamplingFrequency = Math.Clamp(samplingFrequency, 1, 10000),
+            SamplingFrequency = samplingFrequency,
             SessionName = sessionName,
             BaseOutputDir = baseOutputDir,
             ProfilingFlags = profilingFlags,
@@ -68,6 +68,8 @@ public static class ProfilerClient
         if (profilerConfiguration.OnAttachState is not (ProfilerState.Idle or ProfilerState.DryRun or ProfilerState.Running))
             throw new ArgumentException($"Bad value for OnAttachState: {profilerConfiguration.OnAttachState:G}");
 
+        profilerConfiguration.SamplingFrequency = Math.Clamp(profilerConfiguration.SamplingFrequency, 1, 10000);
+
         if (processId <= 0)
             processId = Environment.ProcessId;
 
@@ -75,6 +77,7 @@ public static class ProfilerClient
         if (string.IsNullOrWhiteSpace(processName))
             throw new ArgumentException($"Cannot find a process by processId={processId}");
 
+        // TODO Avoid mutating the caller-owned configuration when session naming and output-path semantics are finalized.
         if (string.IsNullOrWhiteSpace(profilerConfiguration.SessionName))
             profilerConfiguration.SessionName =
                 processName; // TODO (low) if session name is given, we lose processName, it does not go inside the output, only the file name.
@@ -97,7 +100,7 @@ public static class ProfilerClient
         if (string.IsNullOrWhiteSpace(profilerConfiguration.BaseOutputDir))
             profilerConfiguration.BaseOutputDir = Path.Combine(PicolloConstants.PicolloHome, "profiler", "sessions");
 
-        Directory.CreateDirectory(profilerConfiguration.BaseOutputDir);
+        profilerConfiguration.BaseOutputDir = Path.GetFullPath(profilerConfiguration.BaseOutputDir);
 
         var configuration = new SessionConfiguration
         {
@@ -107,7 +110,6 @@ public static class ProfilerClient
         };
 
         var sessionDirectoryPath = configuration.GetSessionOutputDir();
-        Directory.CreateDirectory(sessionDirectoryPath);
 
         ProfilerSession? profilerSession = null;
 
@@ -232,6 +234,8 @@ public static class ProfilerClient
 
         try
         {
+            Directory.CreateDirectory(sessionDirectoryPath);
+
             Log("Starting session processing");
             _ = profilerSession.ProcessSessionAsync();
 
@@ -254,7 +258,23 @@ public static class ProfilerClient
             profilerSession.OnAttachedReceived -= OnAttached;
 
             if (!attachSucceeded)
-                profilerSession.Dispose();
+            {
+                try
+                {
+                    profilerSession.Dispose();
+                }
+                finally
+                {
+                    try
+                    {
+                        Directory.Delete(sessionDirectoryPath, recursive: false);
+                    }
+                    catch
+                    {
+                        // Preserve non-empty session output and ignore concurrent or failed cleanup.
+                    }
+                }
+            }
         }
     }
 

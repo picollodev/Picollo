@@ -94,9 +94,6 @@ public partial class CorProfiler : CorProfilerCallback10Base
                 Configuration = configuration;
                 ThreadsLookup.SetFilters(configuration.ProfilerConfiguration.OsThreadIdFilter, configuration.ProfilerConfiguration.ThreadNameFilter);
 
-                session.SendOnAttached(configuration.SessionId);
-                Log.LogDebug($"Sent OnAttached for session {configuration.SessionId}");
-
                 var existingProfiler = Interlocked.Exchange(ref Profiler, null);
                 if (existingProfiler is not null)
                 {
@@ -104,7 +101,7 @@ public partial class CorProfiler : CorProfilerCallback10Base
                     existingProfiler.Dispose();
                 }
 
-                var profiler = new Profiler(this, session.SendInputChunk, session.SendCallCounters);
+                var profiler = new Profiler(this, session.SendInputChunk, session.SendCallCounters, _ => _globalCts.Cancel());
                 Log.LogDebug("Created profiler session state");
 
                 var onAttachState = configuration.ProfilerConfiguration.OnAttachState;
@@ -118,13 +115,16 @@ public partial class CorProfiler : CorProfilerCallback10Base
                     profiler.Start(_sessionCts.Token);
                 }
 
+                session.SendOnAttached(configuration.SessionId);
+                Log.LogDebug($"Sent OnAttached for session {configuration.SessionId}");
+
                 Log.LogInformation($"Attached with onAttachState={onAttachState:G} and session dir: {configuration.GetSessionOutputDir()}");
             };
 
             session.OnStartReceived += message =>
             {
                 Log.LogDebug($"OnStartReceived callback received with segment name '{message.SegmentName}'");
-                var profiler = Profiler ??= new Profiler(this, session.SendInputChunk, session.SendCallCounters);
+                var profiler = Profiler ??= new Profiler(this, session.SendInputChunk, session.SendCallCounters, _ => _globalCts.Cancel());
 
                 var initialState = profiler.State;
 
@@ -177,6 +177,7 @@ public partial class CorProfiler : CorProfilerCallback10Base
             sessionCts?.Dispose();
 
             Log.LogDebug("Profiler stopped");
+            Logger.Shutdown();
         };
 
         var socketPath = PicolloConstants.GetSessionSocketPath(Environment.ProcessId);

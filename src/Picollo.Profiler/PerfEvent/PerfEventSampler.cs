@@ -136,7 +136,7 @@ internal sealed class PerfEventSampler : NativeSamplerBase
 
             try
             {
-                _outputWriter.Complete();
+                _outputWriter.Complete(exception);
             }
             catch (Exception ex)
             {

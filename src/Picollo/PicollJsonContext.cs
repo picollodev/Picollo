@@ -9,7 +9,7 @@ namespace Picollo;
 [JsonSerializable(typeof(Percentile))]
 [JsonSerializable(typeof(Bucket))]
 [JsonSerializable(typeof(CallCounters))]
-[JsonSerializable(typeof(Threadounters))]
+[JsonSerializable(typeof(ThreadCounters))]
 [JsonSerializable(typeof(FrameCounters))]
 [JsonSerializable(typeof(Metadata))]
 [JsonSerializable(typeof(FrameInfo))]

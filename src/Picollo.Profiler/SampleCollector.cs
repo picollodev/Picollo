@@ -275,17 +275,22 @@ internal sealed class SampleCollector
 
             var knownMethods = ResolvedMethod.KnownMethods;
             _chunk.Metadata.Frames.Clear();
+            const bool useMetadataName = false;
 
             for (int i = _publishedFrameCount; i < knownMethods.Count; i++)
             {
                 var resolvedMethod = knownMethods[i];
+                var managedMethod = resolvedMethod as ManagedResolvedMethod;
                 var frameInfo = new FrameInfo
                 {
-                    Name = resolvedMethod.GetName(),
+                    Name = useMetadataName && managedMethod is not null
+                        ? managedMethod.Metadata.Format(MetadataFormatting.Full)
+                        : resolvedMethod.GetName(),
                     File = resolvedMethod.Module.ModuleName,
                     Type = resolvedMethod.GetFrameType(),
-                    ModuleMvid = (resolvedMethod as ManagedResolvedMethod)?.ModuleMvid,
-                    MethodToken = (resolvedMethod as ManagedResolvedMethod)?.MethodToken,
+                    ModuleMvid = managedMethod?.ModuleMvid,
+                    MethodToken = managedMethod?.MethodToken,
+                    MethodMetadata = managedMethod?.Metadata,
                 };
                 _chunk.Metadata.Frames.Add(frameInfo);
             }
@@ -335,7 +340,7 @@ internal sealed class SampleCollector
                 },
                 ThreadMethodCounters =
                 [
-                    new Threadounters
+                    new ThreadCounters
                     {
                         Name = "Total",
                         UniqueId = ""
@@ -353,16 +358,21 @@ internal sealed class SampleCollector
             totalCounters.FrameCounters.Clear();
 
             var knownMethods = ResolvedMethod.KnownMethods;
+            const bool useMetadataName = false;
 
             foreach (var method in knownMethods)
             {
+                var managedMethod = method as ManagedResolvedMethod;
                 message.Metadata.Frames.Add(new FrameInfo
                 {
-                    Name = method.GetName(),
+                    Name = useMetadataName && managedMethod is not null
+                        ? managedMethod.Metadata.Format(MetadataFormatting.Full)
+                        : method.GetName(),
                     File = method.Module.ModuleName,
                     Type = method.GetFrameType(),
-                    ModuleMvid = (method as ManagedResolvedMethod)?.ModuleMvid,
-                    MethodToken = (method as ManagedResolvedMethod)?.MethodToken,
+                    ModuleMvid = managedMethod?.ModuleMvid,
+                    MethodToken = managedMethod?.MethodToken,
+                    MethodMetadata = managedMethod?.Metadata,
                 });
 
                 totalCounters.FrameCounters.Add(new FrameCounters
@@ -379,7 +389,7 @@ internal sealed class SampleCollector
                 if (!_submittedThreads.TryGetValue((uint)tid, out var threadInfo) || ThreadsLookup.Instance.IsExcluded(threadInfo))
                     continue;
 
-                var threadCounters = new Threadounters
+                var threadCounters = new ThreadCounters
                 {
                     Name = $"TID: {tid}",
                     UniqueId = $"{tid}"

@@ -5,8 +5,6 @@ internal enum ClientMessageType : int
 {
     SessionConfiguration = 1,
     InputChunk = 2,
-    Ping = 3,
-    Pong = 4,
     Start = 5,
     Stop = 6,
     Detach = 7,

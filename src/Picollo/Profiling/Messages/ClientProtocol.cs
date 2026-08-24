@@ -4,16 +4,6 @@ using System.Text.Json.Serialization;
 
 namespace Picollo.Profiling.Messages;
 
-internal sealed class PingMessage : IClientMessage<PingMessage>
-{
-    public static ClientMessageType MessageType => ClientMessageType.Ping;
-}
-
-internal sealed class PongMessage : IClientMessage<PongMessage>
-{
-    public static ClientMessageType MessageType => ClientMessageType.Pong;
-}
-
 internal class SessionConfiguration : IClientMessage<SessionConfiguration>
 {
     public static ClientMessageType MessageType => ClientMessageType.SessionConfiguration;

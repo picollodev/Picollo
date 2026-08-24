@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Immutable;
+using Picollo.Profiling.Messages;
 using Silhouette;
 
 namespace Picollo.Profiler.IpResolution;
@@ -10,6 +11,8 @@ public class ManagedResolvedMethod : ResolvedMethod, IEquatable<ManagedResolvedM
     public FunctionInfo FunctionInfo { get; }
 
     public Key Identity { get; }
+
+    public MethodMetadata Metadata { get; }
 
     public Guid? ModuleMvid => (Module as ManagedResolvedModule)?.Mvid;
     public int? MethodToken => ModuleMvid.HasValue ? FunctionInfo.Token.Value : null;
@@ -31,11 +34,13 @@ public class ManagedResolvedMethod : ResolvedMethod, IEquatable<ManagedResolvedM
         string methodName,
         string? returnType, // TODO Use these
         ImmutableArray<string> parameterTypes,
+        MethodMetadata metadata,
         ReadOnlySpan<IpRange> ipRanges) : base(module, methodName, ipRanges)
     {
         FunctionId = functionId;
         FunctionInfo = functionInfo;
         Identity = new Key(module as ManagedResolvedModule, functionInfo);
+        Metadata = metadata;
         ClassName = typeName;
     }
 

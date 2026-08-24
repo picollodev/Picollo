@@ -14,10 +14,10 @@ public class CallCounters
     public Metadata Metadata { get; set; } = new();
     
     [JsonPropertyName("threadCounters")]
-    public List<Threadounters> ThreadMethodCounters { get; set; } = [];
+    public List<ThreadCounters> ThreadMethodCounters { get; set; } = [];
 }
 
-public sealed class Threadounters
+public sealed class ThreadCounters
 {
     // Name/UniqueId are the same as on InputChunk
     
