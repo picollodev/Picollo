@@ -275,7 +275,6 @@ internal sealed class SampleCollector
 
             var knownMethods = ResolvedMethod.KnownMethods;
             _chunk.Metadata.Frames.Clear();
-            const bool useMetadataName = false;
 
             for (int i = _publishedFrameCount; i < knownMethods.Count; i++)
             {
@@ -283,9 +282,7 @@ internal sealed class SampleCollector
                 var managedMethod = resolvedMethod as ManagedResolvedMethod;
                 var frameInfo = new FrameInfo
                 {
-                    Name = useMetadataName && managedMethod is not null
-                        ? managedMethod.Metadata.Format(MetadataFormatting.Full)
-                        : resolvedMethod.GetName(),
+                    Name = managedMethod?.Metadata.Format(MetadataFormatting.Full) ?? resolvedMethod.GetName(),
                     File = resolvedMethod.Module.ModuleName,
                     Type = resolvedMethod.GetFrameType(),
                     ModuleMvid = managedMethod?.ModuleMvid,
@@ -358,16 +355,13 @@ internal sealed class SampleCollector
             totalCounters.FrameCounters.Clear();
 
             var knownMethods = ResolvedMethod.KnownMethods;
-            const bool useMetadataName = false;
 
             foreach (var method in knownMethods)
             {
                 var managedMethod = method as ManagedResolvedMethod;
                 message.Metadata.Frames.Add(new FrameInfo
                 {
-                    Name = useMetadataName && managedMethod is not null
-                        ? managedMethod.Metadata.Format(MetadataFormatting.Full)
-                        : method.GetName(),
+                    Name = managedMethod?.Metadata.Format(MetadataFormatting.Full) ?? method.GetName(),
                     File = method.Module.ModuleName,
                     Type = method.GetFrameType(),
                     ModuleMvid = managedMethod?.ModuleMvid,

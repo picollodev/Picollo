@@ -16,7 +16,6 @@ public class ManagedResolvedModule : ResolvedModule
 
     public static readonly ManagedResolvedModule Dynamic = new();
 
-    internal SimpleTypeProvider? TypeProvider { get; }
     internal SignatureTypeProvider? SignatureTypeProvider { get; }
     private readonly PEReader? _peReader;
 
@@ -33,7 +32,6 @@ public class ManagedResolvedModule : ResolvedModule
             var mvid = metadataReader.GetGuid(metadataReader.GetModuleDefinition().Mvid);
 
             _peReader = peReader;
-            TypeProvider = new SimpleTypeProvider(metadataReader);
             SignatureTypeProvider = new SignatureTypeProvider(metadataReader);
             Mvid = mvid == Guid.Empty ? null : mvid;
         }

@@ -162,26 +162,7 @@ public partial class CorProfiler
                 var isDllImportPinvoke = (methodProps.Attributes & (uint)MethodAttributes.PinvokeImpl) != 0;
                 var isInternalCall = (methodProps.ImplementationFlags & (uint)MethodImplAttributes.InternalCall) != 0;
                 bool isLibraryImport = false, isDllImportAttribute = false;
-                var metadata = CreateFallbackMethodMetadata(typeName, methodName);
-
-                if (module.TypeProvider is not null)
-                {
-                    try
-                    {
-                        isLibraryImport = module.TypeProvider.HasAttribute(functionInfo, "System.Runtime.InteropServices.LibraryImportAttribute");
-                        isDllImportAttribute = module.TypeProvider.HasAttribute(functionInfo, "System.Runtime.InteropServices.DllImportAttribute");
-                        var ctx = module.TypeProvider.CreateGenericContext(functionInfo);
-                        var sig = module.TypeProvider.DecodeMethodSig(methodProps.Signature, ctx);
-                        returnType = sig.ReturnType;
-                        parameterTypes = sig.ParameterTypes;
-                        typeName = module.TypeProvider.GetTypeDisplayName(typeName, ctx);
-                        methodName = module.TypeProvider.GetMethodDisplayName(methodName, functionInfo, sig, ctx);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.LogWarning(ex, $"Cannot enrich managed method name: {typeName}.{methodName}");
-                    }
-                }
+                MethodMetadata? metadata = null;
 
                 if (module.SignatureTypeProvider is not null)
                 {
@@ -191,15 +172,15 @@ public partial class CorProfiler
                         if (handle.Kind != HandleKind.MethodDefinition)
                             throw new NotSupportedException($"Expected MethodDef token, got {handle.Kind}");
 
-                        metadata = module.SignatureTypeProvider.GetMethodMetadata(
-                            (MethodDefinitionHandle)handle,
-                            methodProps.Signature);
+                        metadata = module.SignatureTypeProvider.GetMethodMetadata((MethodDefinitionHandle)handle, methodProps.Signature);
                     }
                     catch (Exception ex)
                     {
                         Log.LogWarning(ex, $"Cannot create managed method metadata: {typeName}.{methodName}");
                     }
                 }
+
+                metadata ??= CreateFallbackMethodMetadata(typeDefProps.TypeName, methodProps.Name);
 
                 managedMethod = new ManagedResolvedMethod(functionId, functionInfo, module, typeName, methodName, returnType,
                     parameterTypes, metadata, ipRanges)
