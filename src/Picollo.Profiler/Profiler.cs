@@ -186,7 +186,10 @@ internal class Profiler : IStartStop
                     if (_hasNewName)
                     {
                         if (state != ProfilerState.Running)
+                        {
                             _sampleCollector.DropSamples();
+                            _sampleCollector.ResetCallCounters();
+                        }
                         _sampleCollector.SetSegmentName(ChunkName);
                         _hasNewName = false;
                         chunkSamplesCount = 0;

@@ -175,7 +175,7 @@ public sealed class ProfilerSession : IDisposable
 
     internal void SendConfiguration(SessionConfiguration configuration) => SendMessage(configuration);
     
-    public void SendStart(string? segmentName) => SendMessage(new StartMessage {SegmentName = segmentName});
+    public void SendStart(string? segmentName = null) => SendMessage(new StartMessage {SegmentName = segmentName});
 
     public void SendStop(bool toDryRun) => SendMessage(new StopMessage {DryRun = toDryRun});
 

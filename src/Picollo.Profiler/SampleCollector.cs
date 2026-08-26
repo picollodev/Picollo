@@ -414,7 +414,8 @@ internal sealed class SampleCollector
             if (totalCount != totalCounters.FrameCounters.Count)
                 totalCounters.FrameCounters.RemoveRange(totalCount, totalCounters.FrameCounters.Count - totalCount);
 
-            publisher(message);
+            if (totalCounters.FrameCounters.Count != 0)
+                publisher(message);
         }
 
         ResetCallCounters();
